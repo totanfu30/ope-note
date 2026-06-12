@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="手術記録">
+<meta name="theme-color" content="#2563eb">
+<title>手術記録</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <h1>手術記録</h1>
+  <span id="record-count"></span>
+</header>
+
+<main>
+
+  <!-- ============ 入力ビュー ============ -->
+  <section id="view-form" class="view active">
+    <div class="card">
+      <div class="card-title">
+        <span id="form-mode-label">新規記録</span>
+        <button id="btn-new" class="btn-text" hidden>＋ 新規入力に切替</button>
+      </div>
+
+      <h2 class="section-label">基本情報</h2>
+      <div class="field-grid">
+        <div class="field">
+          <label for="f-date">手術日</label>
+          <input type="date" id="f-date">
+        </div>
+        <div class="field">
+          <label for="f-patientId">患者ID</label>
+          <input type="text" id="f-patientId" inputmode="numeric" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="f-age">年齢</label>
+          <input type="number" id="f-age" inputmode="numeric" min="0" max="120">
+        </div>
+        <div class="field">
+          <label for="f-height">身長（cm）</label>
+          <input type="number" id="f-height" inputmode="decimal" min="0" step="0.1">
+        </div>
+        <div class="field">
+          <label for="f-weight">体重（kg）</label>
+          <input type="number" id="f-weight" inputmode="decimal" min="0" step="0.1">
+        </div>
+        <div class="field">
+          <label for="f-bmi">BMI（自動計算）</label>
+          <input type="text" id="f-bmi" readonly tabindex="-1" placeholder="－">
+        </div>
+        <div class="field">
+          <label>性別</label>
+          <div class="chips" id="chips-sex"></div>
+        </div>
+        <div class="field">
+          <label>左右</label>
+          <div class="chips" id="chips-side"></div>
+        </div>
+        <div class="field">
+          <label for="f-diagnosis">疾患名</label>
+          <select id="f-diagnosis"></select>
+        </div>
+        <div class="field field-wide">
+          <label>Crowe分類</label>
+          <div class="chips" id="chips-crowe"></div>
+        </div>
+      </div>
+
+      <h2 class="section-label">手術</h2>
+      <div class="field-grid">
+        <div class="field">
+          <label for="f-surgeon">執刀医</label>
+          <select id="f-surgeon"></select>
+        </div>
+        <div class="field">
+          <label for="f-approach">アプローチ</label>
+          <select id="f-approach"></select>
+        </div>
+        <div class="field">
+          <label for="f-opTime">手術時間（分）</label>
+          <input type="number" id="f-opTime" inputmode="numeric" min="0">
+        </div>
+        <div class="field">
+          <label for="f-bloodLoss">出血量（ml）</label>
+          <input type="number" id="f-bloodLoss" inputmode="numeric" min="0">
+        </div>
+      </div>
+
+      <h2 class="section-label">インプラント</h2>
+      <div class="field-grid field-grid-pairs">
+        <div class="field">
+          <label for="f-cup">Cup</label>
+          <select id="f-cup"></select>
+        </div>
+        <div class="field">
+          <label for="f-liner">Liner</label>
+          <select id="f-liner"></select>
+        </div>
+        <div class="field">
+          <label for="f-head">Head</label>
+          <select id="f-head"></select>
+        </div>
+        <div class="field">
+          <label for="f-stem">Stem</label>
+          <select id="f-stem"></select>
+        </div>
+      </div>
+
+      <h2 class="section-label">ナビゲーション</h2>
+      <div class="field-grid field-grid-pairs">
+        <div class="field field-wide">
+          <label for="f-navigation">Navigation</label>
+          <select id="f-navigation"></select>
+        </div>
+        <div class="field">
+          <label for="f-navRI">Navigation RI</label>
+          <input type="text" id="f-navRI" inputmode="decimal" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="f-navRA">Navigation RA</label>
+          <input type="text" id="f-navRA" inputmode="decimal" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="f-measuredRI">実測 RI</label>
+          <input type="text" id="f-measuredRI" inputmode="decimal" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="f-measuredRA">実測 RA</label>
+          <input type="text" id="f-measuredRA" inputmode="decimal" autocomplete="off">
+        </div>
+      </div>
+
+      <h2 class="section-label">メモ</h2>
+      <div class="field field-wide">
+        <textarea id="f-memo" rows="3" placeholder="フリー記述"></textarea>
+      </div>
+
+      <h2 class="section-label">手術記録</h2>
+      <div class="field field-wide">
+        <textarea id="f-operativeNote" rows="10" placeholder="手術の経過などを記録"></textarea>
+      </div>
+    </div>
+
+    <div class="save-bar">
+      <button id="btn-save" class="btn-primary">保存</button>
+    </div>
+  </section>
+
+  <!-- ============ 一覧ビュー ============ -->
+  <section id="view-list" class="view">
+    <div class="list-toolbar">
+      <input type="search" id="list-filter" placeholder="患者ID・疾患名・執刀医で絞り込み">
+    </div>
+    <ul id="record-list" class="record-list"></ul>
+    <p id="list-empty" class="empty-note" hidden>記録はまだありません</p>
+  </section>
+
+  <!-- ============ 設定ビュー ============ -->
+  <section id="view-settings" class="view">
+    <p class="settings-note">各項目の選択肢を追加・並べ替え・削除できます。削除しても過去の記録の値は変わりません。</p>
+    <div id="settings-list"></div>
+    <div class="settings-danger">
+      <button id="btn-reset-all" class="btn-danger">全データを初期化（記録・マスタを削除）</button>
+      <p class="data-hint">取り込みをやり直す時などに使用します。初期化前に必要なら「データ」タブからバックアップしてください。</p>
+    </div>
+  </section>
+
+  <!-- ============ データビュー ============ -->
+  <section id="view-data" class="view">
+    <div class="card">
+      <div class="card-title"><span>Macへ送信 / バックアップ</span></div>
+      <p class="data-note">未送信の記録: <strong id="unsynced-count">0</strong> 件</p>
+      <div class="data-actions">
+        <button id="btn-export-unsynced" class="btn-primary">未送信分を書き出して送信</button>
+        <button id="btn-export-all-json" class="btn-secondary">全件JSONバックアップ</button>
+      </div>
+      <p class="data-hint">iPhoneでは共有シートが開くので「AirDrop」でMacへ送信してください。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>取り込み</span></div>
+      <div id="dropzone" class="dropzone">
+        ここにファイルをドロップ<br>またはタップして選択
+        <span class="dropzone-sub">対応形式: .json / .csv / .xlsx</span>
+      </div>
+      <input type="file" id="file-input" accept=".json,.csv,.xlsx,.xls" hidden>
+      <p class="data-hint">JSONはUUIDで重複なくマージ。Excel/CSVは「手術日＋患者ID＋左右」が同じ既存記録をスキップし、出現した執刀医名・インプラント名は選択肢マスタへ自動追加します。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>Excel書き出し</span></div>
+      <div class="data-actions">
+        <button id="btn-export-xlsx" class="btn-secondary">全件をExcel (.xlsx) で書き出し</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<nav class="tabbar">
+  <button data-view="form" class="active">入力</button>
+  <button data-view="list">一覧</button>
+  <button data-view="data">データ<span id="tab-badge" class="badge" hidden></span></button>
+  <button data-view="settings">設定</button>
+</nav>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="app.js"></script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js");
+  });
+}
+</script>
+</body>
+</html>

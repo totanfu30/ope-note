@@ -1,0 +1,518 @@
+/* ====================================================================
+ * 手術記録アプリ (ope-note) — FileMaker風カードUI
+ * モバイルファースト。タップターゲットは44px以上を確保。
+ * ==================================================================== */
+
+:root {
+  --accent: #2563eb;
+  --accent-dark: #1d4ed8;
+  --bg: #eef1f5;
+  --card: #ffffff;
+  --border: #d6dbe3;
+  --text: #1f2937;
+  --text-sub: #6b7280;
+  --danger: #dc2626;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif;
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ============ ヘッダー ============ */
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--accent);
+  color: #fff;
+  padding: calc(env(safe-area-inset-top) + 10px) 16px 10px;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+#record-count {
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+/* ============ ビュー切替 ============ */
+
+main {
+  padding: 12px 12px calc(env(safe-area-inset-bottom) + 76px);
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.view { display: none; }
+.view.active { display: block; }
+
+/* ============ カード ============ */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--accent-dark);
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--accent);
+  margin-bottom: 4px;
+}
+
+.section-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-sub);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 18px 0 8px;
+  padding-left: 2px;
+  border-left: 3px solid var(--accent);
+  padding-left: 8px;
+}
+
+/* ============ フォーム ============ */
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
+
+.field { display: flex; flex-direction: column; }
+.field-wide { grid-column: 1 / -1; }
+
+.field label {
+  font-size: 12px;
+  color: var(--text-sub);
+  margin-bottom: 4px;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="date"],
+input[type="search"],
+select,
+textarea {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  font-size: 16px; /* 16px未満だとiOSでフォーカス時に画面が拡大される */
+  color: var(--text);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+select {
+  background-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='2' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+
+input[readonly] {
+  background: #f3f4f6;
+  color: var(--text-sub);
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+/* ============ チップ（選択ボタン） ============ */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  min-height: 44px;
+  padding: 8px 16px;
+  font-size: 15px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.chip.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.chip-orphan { border-style: dashed; }
+
+/* ============ 保存バー ============ */
+
+.save-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(env(safe-area-inset-bottom) + 56px);
+  padding: 8px 12px;
+  background: linear-gradient(to top, var(--bg) 70%, transparent);
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.btn-primary {
+  width: 100%;
+  min-height: 48px;
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+}
+
+.btn-primary:active { background: var(--accent-dark); }
+
+.btn-small {
+  width: auto;
+  min-height: 44px;
+  padding: 0 18px;
+  font-size: 15px;
+  box-shadow: none;
+}
+
+.btn-text {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+/* ============ 一覧 ============ */
+
+.list-toolbar { margin-bottom: 10px; }
+
+.record-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.record-item {
+  display: flex;
+  align-items: stretch;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.record-main {
+  flex: 1;
+  padding: 12px 14px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.record-main:active { background: #f3f6fc; }
+
+.record-line1 {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.record-line2 {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-delete {
+  border: none;
+  background: none;
+  color: var(--danger);
+  font-size: 13px;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.empty-note {
+  text-align: center;
+  color: var(--text-sub);
+  padding: 40px 0;
+}
+
+/* ============ 設定 ============ */
+
+.settings-note {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin: 4px 2px 12px;
+}
+
+.settings-group {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  padding: 0 14px;
+}
+
+.settings-group summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.option-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+
+.option-list li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 48px;
+  border-bottom: 1px solid #eceff3;
+}
+
+.option-value {
+  flex: 1;
+  font-size: 15px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.option-list button {
+  min-width: 40px;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.option-list button:disabled { opacity: 0.3; }
+
+.option-list .btn-delete { border: none; min-width: auto; }
+
+.add-row {
+  display: flex;
+  gap: 8px;
+  padding: 10px 0 14px;
+}
+
+.add-row input { flex: 1; }
+
+.settings-danger {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.btn-danger {
+  width: 100%;
+  min-height: 48px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--danger);
+  background: #fff;
+  border: 1.5px solid var(--danger);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.btn-danger:active { background: #fef2f2; }
+
+/* ============ データ入出力 ============ */
+
+.data-note {
+  font-size: 14px;
+  margin: 10px 0;
+}
+
+.data-note strong {
+  color: var(--accent-dark);
+  font-size: 18px;
+}
+
+.data-hint {
+  font-size: 12px;
+  color: var(--text-sub);
+  margin: 10px 0 2px;
+  line-height: 1.6;
+}
+
+.data-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.btn-secondary {
+  width: 100%;
+  min-height: 48px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+  background: #fff;
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.btn-secondary:active { background: #eff4ff; }
+
+#view-data .card { margin-bottom: 12px; }
+
+.dropzone {
+  margin-top: 10px;
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 15px;
+  color: var(--text-sub);
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  line-height: 1.8;
+}
+
+.dropzone.dragover {
+  border-color: var(--accent);
+  background: #eff4ff;
+  color: var(--accent);
+}
+
+.dropzone-sub {
+  display: block;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 5px;
+  min-width: 18px;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--danger);
+  border-radius: 10px;
+  text-align: center;
+}
+
+/* ============ タブバー ============ */
+
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.tabbar button {
+  flex: 1;
+  min-height: 52px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  color: var(--text-sub);
+  cursor: pointer;
+}
+
+.tabbar button.active {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* ============ トースト ============ */
+
+.toast {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom) + 120px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(31, 41, 55, 0.92);
+  color: #fff;
+  font-size: 14px;
+  padding: 10px 20px;
+  border-radius: 20px;
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+  z-index: 20;
+  white-space: nowrap;
+}
+
+.toast.show { opacity: 1; }
+
+/* ============ Mac等の広い画面 ============ */
+
+@media (min-width: 640px) {
+  .field-grid { grid-template-columns: 1fr 1fr 1fr; }
+  /* ペア配置（Cup/Liner→Head/Stem、Nav RI/RA→実測RI/RA）は広い画面でも2列を維持 */
+  .field-grid-pairs { grid-template-columns: 1fr 1fr; }
+  .field-wide { grid-column: 1 / -1; }
+}
