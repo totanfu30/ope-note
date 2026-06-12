@@ -169,7 +169,20 @@
   <!-- ============ 一覧ビュー ============ -->
   <section id="view-list" class="view">
     <div class="list-toolbar">
-      <input type="search" id="list-filter" placeholder="患者ID・疾患名・執刀医で絞り込み">
+      <div class="sort-row">
+        <label for="list-sort">並び替え</label>
+        <select id="list-sort">
+          <option value="recordNo-asc">登録No.（昇順）</option>
+          <option value="recordNo-desc">登録No.（降順）</option>
+          <option value="surgeryDate-desc" selected>手術日（新しい順）</option>
+          <option value="surgeryDate-asc">手術日（古い順）</option>
+        </select>
+      </div>
+      <div class="filter-row">
+        <input type="search" id="filter-id" placeholder="IDで絞り込み" inputmode="numeric">
+        <input type="search" id="filter-diagnosis" placeholder="疾患名で絞り込み">
+        <input type="search" id="filter-surgeon" placeholder="執刀医で絞り込み">
+      </div>
     </div>
     <ul id="record-list" class="record-list"></ul>
     <p id="list-empty" class="empty-note" hidden>記録はまだありません</p>

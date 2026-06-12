@@ -393,30 +393,38 @@ async function deleteRecord(rec) {
 async function renderList() {
   const listEl = document.getElementById('record-list');
   const emptyEl = document.getElementById('list-empty');
-  const filter = document.getElementById('list-filter').value.trim().toLowerCase();
+  const fId   = document.getElementById('filter-id').value.trim().toLowerCase();
+  const fDiag = document.getElementById('filter-diagnosis').value.trim().toLowerCase();
+  const fSurg = document.getElementById('filter-surgeon').value.trim().toLowerCase();
+  const sortKey = document.getElementById('list-sort').value;
 
   let records = await dbGetAll('records');
 
-  // カウント番号: 手術日昇順での順位（途中に追加・削除すると自動で振り直される）。フィルタとは無関係に全件で算出
+  // 項目別の絞り込み（ID・疾患名・執刀医のAND）
+  records = records.filter((r) =>
+    (!fId   || (r.patientID || '').toLowerCase().includes(fId)) &&
+    (!fDiag || (r.diagnosis || '').toLowerCase().includes(fDiag)) &&
+    (!fSurg || (r.surgeon || '').toLowerCase().includes(fSurg)));
+
+  // カウント番号・総数は「絞り込み後の集合」で算出（手術日昇順での順位）
   const countMap = new Map([...records].sort((a, b) =>
     (a.surgeryDate || '').localeCompare(b.surgeryDate || '') ||
     (a.createdAt || '').localeCompare(b.createdAt || ''))
     .map((r, i) => [r.uuid, i + 1]));
   const total = records.length;
 
-  records.sort((a, b) =>
-    (b.surgeryDate || '').localeCompare(a.surgeryDate || '') ||
-    (b.createdAt || '').localeCompare(a.createdAt || ''));
-
-  if (filter) {
-    records = records.filter((r) =>
-      (r.patientID || '').toLowerCase().includes(filter) ||
-      (r.diagnosis || '').toLowerCase().includes(filter) ||
-      (r.surgeon || '').toLowerCase().includes(filter));
-  }
+  // 表示順（登録No. / 手術日 の昇順・降順）
+  const [key, dir] = sortKey.split('-');
+  const sign = dir === 'asc' ? 1 : -1;
+  records.sort((a, b) => {
+    if (key === 'recordNo') return sign * ((a.recordNo || 0) - (b.recordNo || 0));
+    return sign * ((a.surgeryDate || '').localeCompare(b.surgeryDate || '') ||
+                   (a.createdAt || '').localeCompare(b.createdAt || ''));
+  });
 
   listEl.innerHTML = '';
   emptyEl.hidden = records.length > 0;
+  emptyEl.textContent = (fId || fDiag || fSurg) ? '該当する記録がありません' : '記録はまだありません';
 
   for (const rec of records) {
     const li = document.createElement('li');
@@ -1148,7 +1156,10 @@ async function init() {
   });
   // 編集中の内容をそのまま引き継いだ未保存の新規入力にする（両側症例の右→左など）
   document.getElementById('btn-duplicate').addEventListener('click', () => enterDuplicateMode(collectForm()));
-  document.getElementById('list-filter').addEventListener('input', renderList);
+  for (const id of ['filter-id', 'filter-diagnosis', 'filter-surgeon']) {
+    document.getElementById(id).addEventListener('input', renderList);
+  }
+  document.getElementById('list-sort').addEventListener('change', renderList);
   for (const b of document.querySelectorAll('.tabbar button')) {
     b.addEventListener('click', () => switchView(b.dataset.view));
   }
