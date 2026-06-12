@@ -793,6 +793,77 @@ async function exportXLSX() {
   toast(`${records.length} 件をExcelに書き出しました`);
 }
 
+/* ---------- 暗号化バックアップ（Web Crypto: PBKDF2 + AES-256-GCM） ---------- */
+/* iCloud等のクラウドに置く前提のバックアップ。パスワードから鍵を導出し中身を暗号化する。
+   復元時は「取り込み」に通常どおりドロップ → パスワード入力で復号 → 既存のUUIDマージへ流す。
+   ※高度なデータ保護(E2EE)が未設定でも、ファイル自体が暗号化されているため漏洩時に中身を読めない。 */
+const ENC_ITER = 250000;
+
+function bufToB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function deriveKey(password, salt, iter) {
+  const baseKey = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: iter, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false, ['encrypt', 'decrypt']);
+}
+
+async function encryptPayload(plaintext, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt, ENC_ITER);
+  const ct = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv }, key, new TextEncoder().encode(plaintext));
+  return {
+    app: 'ope-note', enc: 'aes-gcm', v: 1, kdf: 'PBKDF2',
+    iter: ENC_ITER, hash: 'SHA-256',
+    salt: bufToB64(salt), iv: bufToB64(iv), ct: bufToB64(ct),
+  };
+}
+
+async function decryptPayload(obj, password) {
+  const key = await deriveKey(password, b64ToBytes(obj.salt), obj.iter || ENC_ITER);
+  const pt = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: b64ToBytes(obj.iv) }, key, b64ToBytes(obj.ct));
+  return new TextDecoder().decode(pt);
+}
+
+async function exportEncrypted() {
+  const data = await buildExportData(false); // 全件
+  if (!data.records.length) { toast('記録がありません'); return; }
+  const pw = prompt('バックアップを暗号化するパスワードを入力してください。\n※このパスワードは復元時に必要です。忘れると復号できません。');
+  if (pw === null) return;
+  if (pw.length < 6) { alert('パスワードは6文字以上にしてください'); return; }
+  if (prompt('確認のためもう一度入力してください') !== pw) { alert('パスワードが一致しません'); return; }
+
+  const payload = await encryptPayload(JSON.stringify(data), pw);
+  const name = `openote_暗号化_${timestamp()}.json`;
+  const file = new File([JSON.stringify(payload)], name, { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: '手術記録（暗号化バックアップ）' });
+      toast(`${data.records.length} 件を暗号化して書き出しました`);
+      return;
+    } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  downloadFile(file);
+  toast(`${data.records.length} 件を暗号化して書き出しました`);
+}
+
 /* ---------- インポート ---------- */
 
 async function handleImportFile(file) {
@@ -811,6 +882,15 @@ async function importJSONFile(file) {
   let data;
   try { data = JSON.parse(await file.text()); }
   catch { alert('JSONの解析に失敗しました'); return; }
+
+  // 暗号化バックアップなら復号してから取り込む
+  if (data && data.app === 'ope-note' && data.enc) {
+    const pw = prompt('暗号化バックアップのパスワードを入力してください');
+    if (pw === null) return;
+    try { data = JSON.parse(await decryptPayload(data, pw)); }
+    catch { alert('復号に失敗しました。パスワードが違うか、ファイルが壊れています。'); return; }
+  }
+
   if (data.app !== 'ope-note' || !Array.isArray(data.records)) {
     alert('ope-noteの書き出しファイルではありません');
     return;
@@ -951,6 +1031,7 @@ async function init() {
   document.getElementById('btn-export-unsynced').addEventListener('click', () => exportJSON(true));
   document.getElementById('btn-export-all-json').addEventListener('click', () => exportJSON(false));
   document.getElementById('btn-export-xlsx').addEventListener('click', exportXLSX);
+  document.getElementById('btn-export-encrypted').addEventListener('click', exportEncrypted);
 
   const dropzone = document.getElementById('dropzone');
   const fileInput = document.getElementById('file-input');
