@@ -16,11 +16,11 @@ const CATEGORIES = [
   { key: 'crowe',      label: 'Crowe分類',  field: 'croweGroup' },
   { key: 'surgeon',    label: '執刀医',     field: 'surgeon' },
   { key: 'approach',   label: 'アプローチ', field: 'approach' },
-  { key: 'cup',        label: 'Cup',        field: 'cupName' },
-  { key: 'liner',      label: 'Liner',      field: 'linerType' },
-  { key: 'head',       label: 'Head',       field: 'headType' },
-  { key: 'stem',       label: 'Stem',       field: 'stemName' },
-  { key: 'navigation', label: 'Navigation', field: 'navigationName' },
+  { key: 'cup',          label: 'Cup 商品名', field: 'cupName' },
+  { key: 'liner',        label: 'Liner',      field: 'linerType' },
+  { key: 'stem',         label: 'Stem 商品名', field: 'stemName' },
+  { key: 'headMaterial', label: 'Head 素材',  field: 'headMaterial' },
+  { key: 'navigation',   label: 'Navigation', field: 'navigationName' },
 ];
 
 /* チップ（ボタン）表示にするカテゴリ。それ以外はプルダウン */
@@ -34,11 +34,11 @@ const DEFAULT_OPTIONS = {
   crowe:      ['Group I', 'Group II', 'Group III', 'Group IV'],
   surgeon:    [],
   approach:   ['前方 (DAA)', '前側方 (ALS)', '後側方', 'その他'],
-  cup:        [],
-  liner:      [],
-  head:       [],
-  stem:       [],
-  navigation: ['NaviSwiss', 'なし'],
+  cup:          [],
+  liner:        [],
+  stem:         [],
+  headMaterial: [],
+  navigation:   ['NaviSwiss', 'なし'],
 };
 
 let db = null;
@@ -222,6 +222,9 @@ function collectForm() {
     weightKg:         numOrNull(document.getElementById('f-weight').value),
     operationTimeMin: numOrNull(document.getElementById('f-opTime').value),
     bloodLossML:      numOrNull(document.getElementById('f-bloodLoss').value),
+    cupSize:          document.getElementById('f-cupSize').value.trim(),
+    stemSize:         document.getElementById('f-stemSize').value.trim(),
+    headSize:         document.getElementById('f-headSize').value.trim(),
     navRI:            document.getElementById('f-navRI').value.trim(),
     navRA:            document.getElementById('f-navRA').value.trim(),
     measuredRI:       document.getElementById('f-measuredRI').value.trim(),
@@ -248,6 +251,9 @@ function fillForm(rec) {
   updateBMIDisplay();
   document.getElementById('f-opTime').value    = rec.operationTimeMin ?? '';
   document.getElementById('f-bloodLoss').value = rec.bloodLossML ?? '';
+  document.getElementById('f-cupSize').value   = rec.cupSize || '';
+  document.getElementById('f-stemSize').value  = rec.stemSize || '';
+  document.getElementById('f-headSize').value  = rec.headSize || '';
   document.getElementById('f-navRI').value      = rec.navRI || '';
   document.getElementById('f-navRA').value      = rec.navRA || '';
   document.getElementById('f-measuredRI').value = rec.measuredRI || '';
@@ -524,7 +530,9 @@ const EXPORT_COLUMNS = [
   ['性別', 'sex'], ['左右', 'side'], ['疾患名', 'diagnosis'], ['Crowe分類', 'croweGroup'],
   ['執刀医', 'surgeon'], ['アプローチ', 'approach'],
   ['手術時間(分)', 'operationTimeMin'], ['出血量(ml)', 'bloodLossML'],
-  ['cup名', 'cupName'], ['liner種類', 'linerType'], ['head', 'headType'], ['stem名', 'stemName'],
+  ['cup名', 'cupName'], ['cupサイズ', 'cupSize'], ['liner種類', 'linerType'],
+  ['stem名', 'stemName'], ['stemサイズ', 'stemSize'],
+  ['headサイズ', 'headSize'], ['head素材', 'headMaterial'],
   ['navigation名', 'navigationName'], ['navigation RI', 'navRI'], ['navigation RA', 'navRA'],
   ['実測RI', 'measuredRI'], ['実測RA', 'measuredRA'],
   ['メモ', 'memo'], ['手術記録', 'operativeNote'],
@@ -545,10 +553,13 @@ const IMPORT_ALIASES = {
   approach:         ['アプローチ', '進入法', 'approach'],
   operationTimeMin: ['手術時間', '手術時間(分)', '手術時間分', 'optime', 'time'],
   bloodLossML:      ['出血量', '出血量(ml)', '出血量ml', 'ebl', 'bloodloss'],
-  cupName:          ['cup名', 'cup', 'カップ', 'カップ名'],
+  cupName:          ['cup名', 'cup', 'カップ', 'カップ名', 'cup商品名'],
+  cupSize:          ['cupサイズ', 'cupsize', 'カップサイズ', 'cup径'],
   linerType:        ['liner種類', 'liner', 'liner名', 'ライナー', 'hxlpe'],
-  headType:         ['head', 'head種類', 'head名', 'ヘッド', '骨頭', '32-6delta'],
-  stemName:         ['stem名', 'stem', 'ステム', 'ステム名', 'taperloc6ho'],
+  stemName:         ['stem名', 'stem', 'ステム', 'ステム名', 'taperloc6ho', 'stem商品名'],
+  stemSize:         ['stemサイズ', 'stemsize', 'ステムサイズ'],
+  headSize:         ['headサイズ', 'headsize', 'ヘッドサイズ', '骨頭サイズ', '骨頭径', 'head', 'ヘッド', '骨頭'],
+  headMaterial:     ['head素材', 'headmaterial', 'ヘッド素材', '骨頭素材'],
   navigationName:   ['navigation名', 'navigation', 'ナビゲーション', 'ナビ', 'nav', 'arhippinless'],
   navRI:            ['navigationri', 'navri', 'ナビri'],
   navRA:            ['navigationra', 'navra', 'ナビra'],

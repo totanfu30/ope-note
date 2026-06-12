@@ -23,15 +23,22 @@ python3 -m http.server 8000
 ### records ストア（keyPath: uuid）
 
 手術日 / 患者ID / 年齢 / 身長(heightCm) / 体重(weightKg) / 性別 / 左右 / 疾患名 / Crowe分類 / 執刀医 / アプローチ /
-手術時間 / 出血量 / Cup / Liner / Head / Stem / Navigation /
+手術時間 / 出血量 /
+Cup商品名(cupName) / Cupサイズ(cupSize) / Liner(linerType) /
+Stem商品名(stemName) / Stemサイズ(stemSize) / Headサイズ(headSize) / Head素材(headMaterial) /
+Navigation /
 Navigation RI・RA / 実測 RI・RA / メモ / 手術記録 /
 uuid / createdAt / updatedAt / createdDevice / syncedAt
+
+- **Cup / Stem**: 商品名（選択式マスタ）＋サイズ（Cupは数字、Stemは数字＋文字の自由記載）
+- **Head**: サイズ（数字の自由記載）＋素材（選択式マスタ `headMaterial`）。※旧 `headType`（単一select）は廃止
+- **Liner**: 選択式（変更なし）
 
 ### masterOptions ストア（keyPath: id, autoIncrement）
 
 category / value / sortOrder / isActive
 
-カテゴリ: sex, side, diagnosis, crowe, surgeon, approach, cup, liner, head, stem, navigation
+カテゴリ: sex, side, diagnosis, crowe, surgeon, approach, cup, liner, stem, headMaterial, navigation
 
 ## ロードマップ
 
