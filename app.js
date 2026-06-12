@@ -320,6 +320,21 @@ function clearForm() {
   fillForm({ surgeryDate: todayStr() });
   document.getElementById('form-mode-label').textContent = '新規記録';
   document.getElementById('btn-new').hidden = true;
+  document.getElementById('btn-duplicate').hidden = true;
+}
+
+/* 既存記録（または現在のフォーム内容）を引き継いだ「未保存の新規入力」にする。
+   保存するとUUID・登録番号が新規採番される。両側症例で右→左を作る用途。 */
+function enterDuplicateMode(srcRec) {
+  editingUuid = null;
+  editingMeta = null;
+  fillForm(srcRec);
+  document.getElementById('form-mode-label').textContent = '新規記録（複製・未保存）';
+  document.getElementById('btn-new').hidden = false;
+  document.getElementById('btn-duplicate').hidden = true;
+  switchView('form');
+  window.scrollTo({ top: 0 });
+  toast('複製しました。左右など違う項目を直して保存してください');
 }
 
 /* ============================ 保存・編集・削除 ============================ */
@@ -358,6 +373,7 @@ async function editRecord(rec) {
   document.getElementById('form-mode-label').textContent =
     `編集中: 登録No.${rec.recordNo ?? '－'} / ${rec.surgeryDate} / ID ${rec.patientID || '－'}`;
   document.getElementById('btn-new').hidden = false;
+  document.getElementById('btn-duplicate').hidden = false;
   switchView('form');
   window.scrollTo({ top: 0 });
 }
@@ -422,13 +438,21 @@ async function renderList() {
     main.appendChild(line2);
     main.addEventListener('click', () => editRecord(rec));
 
+    const actions = document.createElement('div');
+    actions.className = 'record-actions';
+    const dup = document.createElement('button');
+    dup.className = 'btn-dup';
+    dup.textContent = '複製';
+    dup.addEventListener('click', (e) => { e.stopPropagation(); enterDuplicateMode(rec); });
     const del = document.createElement('button');
     del.className = 'btn-delete';
     del.textContent = '削除';
     del.addEventListener('click', (e) => { e.stopPropagation(); deleteRecord(rec); });
+    actions.appendChild(dup);
+    actions.appendChild(del);
 
     li.appendChild(main);
-    li.appendChild(del);
+    li.appendChild(actions);
     listEl.appendChild(li);
   }
 }
@@ -1122,6 +1146,8 @@ async function init() {
   document.getElementById('btn-new').addEventListener('click', () => {
     if (confirm('編集を中止して新規入力に切り替えますか？（未保存の変更は破棄されます）')) clearForm();
   });
+  // 編集中の内容をそのまま引き継いだ未保存の新規入力にする（両側症例の右→左など）
+  document.getElementById('btn-duplicate').addEventListener('click', () => enterDuplicateMode(collectForm()));
   document.getElementById('list-filter').addEventListener('input', renderList);
   for (const b of document.querySelectorAll('.tabbar button')) {
     b.addEventListener('click', () => switchView(b.dataset.view));

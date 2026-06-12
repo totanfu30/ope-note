@@ -281,6 +281,26 @@ input:focus, select:focus, textarea:focus {
   text-overflow: ellipsis;
 }
 
+.record-actions {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+}
+
+.record-actions button {
+  flex: 1;
+  border: none;
+  background: none;
+  font-size: 13px;
+  padding: 0 16px;
+  cursor: pointer;
+}
+
+.btn-dup {
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
+}
+
 .btn-delete {
   border: none;
   background: none;

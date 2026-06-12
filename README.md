@@ -50,6 +50,10 @@ category / value / sortOrder / isActive
 
 カテゴリ: sex, side, diagnosis, crowe, surgeon, approach, cup, liner, stem, headMaterial, navigation
 
+## 入力の補助
+
+- **複製**: 一覧カードの「複製」または編集画面の「複製して新規」で、その症例の内容を引き継いだ**未保存の新規入力**になる（保存時にUUID・登録番号を新規採番）。両側症例で右→左を作る際、ID・身長・体重などの共通項目を再入力せずに済む
+
 ## ロードマップ
 
 - [x] **Phase 1**: カード型入力フォーム＋IndexedDB保存＋一覧＋マスタ設定画面
