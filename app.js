@@ -6,7 +6,7 @@
  * ==================================================================== */
 
 const DB_NAME = 'openote';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 /* 選択式項目の定義: key=マスタのカテゴリ, field=記録レコードのフィールド名 */
 const CATEGORIES = [
@@ -53,10 +53,18 @@ function openDB() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const d = e.target.result;
-      const rec = d.createObjectStore('records', { keyPath: 'uuid' });
-      rec.createIndex('surgeryDate', 'surgeryDate');
-      const opt = d.createObjectStore('masterOptions', { keyPath: 'id', autoIncrement: true });
-      opt.createIndex('category', 'category');
+      if (!d.objectStoreNames.contains('records')) {
+        const rec = d.createObjectStore('records', { keyPath: 'uuid' });
+        rec.createIndex('surgeryDate', 'surgeryDate');
+      }
+      if (!d.objectStoreNames.contains('masterOptions')) {
+        const opt = d.createObjectStore('masterOptions', { keyPath: 'id', autoIncrement: true });
+        opt.createIndex('category', 'category');
+      }
+      // v2: 登録番号(recordNo)の永続カウンタなどを保持する meta ストア
+      if (!d.objectStoreNames.contains('meta')) {
+        d.createObjectStore('meta', { keyPath: 'key' });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -74,8 +82,38 @@ function dbRequest(storeName, mode, fn) {
 }
 
 const dbGetAll = (s)      => dbRequest(s, 'readonly',  (st) => st.getAll());
+const dbGet    = (s, key) => dbRequest(s, 'readonly',  (st) => st.get(key));
 const dbPut    = (s, val) => dbRequest(s, 'readwrite', (st) => st.put(val));
 const dbDelete = (s, key) => dbRequest(s, 'readwrite', (st) => st.delete(key));
+
+/* ---------- meta（登録番号カウンタ等の永続値） ---------- */
+async function getMeta(key, def) {
+  const row = await dbGet('meta', key);
+  return row ? row.value : def;
+}
+async function setMeta(key, value) {
+  await dbRequest('meta', 'readwrite', (st) => st.put({ key, value }));
+}
+
+/* 新規保存用に登録番号を1つ払い出す（払い出した番号は二度と再利用しない） */
+async function allocRecordNo() {
+  const n = await getMeta('nextRecordNo', 1);
+  await setMeta('nextRecordNo', n + 1);
+  return n;
+}
+
+/* 既存記録に登録番号が無いものへ採番し、カウンタを最大値+1に整える（初回起動・マージ後の保険） */
+async function backfillRecordNos() {
+  const recs = await dbGetAll('records');
+  const maxNo = recs.reduce((m, r) => Math.max(m, Number(r.recordNo) || 0), 0);
+  let next = await getMeta('nextRecordNo', 1);
+  if (next <= maxNo) next = maxNo + 1;
+  const missing = recs.filter((r) => !r.recordNo).sort((a, b) =>
+    (a.surgeryDate || '').localeCompare(b.surgeryDate || '') ||
+    (a.createdAt || '').localeCompare(b.createdAt || ''));
+  for (const r of missing) { r.recordNo = next++; await dbPut('records', r); }
+  await setMeta('nextRecordNo', next);
+}
 
 /* ============================ ユーティリティ ============================ */
 
@@ -296,11 +334,13 @@ async function saveRecord() {
     rec.createdAt = editingMeta.createdAt;
     rec.createdDevice = editingMeta.createdDevice;
     rec.syncedAt = editingMeta.syncedAt ?? null;
+    rec.recordNo = editingMeta.recordNo; // 登録番号は編集で変えない
   } else {
     rec.uuid = genUUID();
     rec.createdAt = now;
     rec.createdDevice = deviceName();
     rec.syncedAt = null;
+    rec.recordNo = await allocRecordNo();
   }
   rec.updatedAt = now;
 
@@ -313,10 +353,10 @@ async function saveRecord() {
 
 async function editRecord(rec) {
   editingUuid = rec.uuid;
-  editingMeta = { createdAt: rec.createdAt, createdDevice: rec.createdDevice, syncedAt: rec.syncedAt };
+  editingMeta = { createdAt: rec.createdAt, createdDevice: rec.createdDevice, syncedAt: rec.syncedAt, recordNo: rec.recordNo };
   fillForm(rec);
   document.getElementById('form-mode-label').textContent =
-    `編集中: ${rec.surgeryDate} / ID ${rec.patientID || '－'}`;
+    `編集中: 登録No.${rec.recordNo ?? '－'} / ${rec.surgeryDate} / ID ${rec.patientID || '－'}`;
   document.getElementById('btn-new').hidden = false;
   switchView('form');
   window.scrollTo({ top: 0 });
@@ -340,6 +380,14 @@ async function renderList() {
   const filter = document.getElementById('list-filter').value.trim().toLowerCase();
 
   let records = await dbGetAll('records');
+
+  // カウント番号: 手術日昇順での順位（途中に追加・削除すると自動で振り直される）。フィルタとは無関係に全件で算出
+  const countMap = new Map([...records].sort((a, b) =>
+    (a.surgeryDate || '').localeCompare(b.surgeryDate || '') ||
+    (a.createdAt || '').localeCompare(b.createdAt || ''))
+    .map((r, i) => [r.uuid, i + 1]));
+  const total = records.length;
+
   records.sort((a, b) =>
     (b.surgeryDate || '').localeCompare(a.surgeryDate || '') ||
     (b.createdAt || '').localeCompare(a.createdAt || ''));
@@ -360,6 +408,10 @@ async function renderList() {
 
     const main = document.createElement('div');
     main.className = 'record-main';
+    const nos = document.createElement('div');
+    nos.className = 'record-nos';
+    nos.textContent = `登録No.${rec.recordNo ?? '－'}　/　カウント ${countMap.get(rec.uuid)} / ${total}`;
+    main.appendChild(nos);
     const line1 = document.createElement('div');
     line1.className = 'record-line1';
     line1.textContent = `${rec.surgeryDate || '日付なし'}　ID: ${rec.patientID || '－'}`;
@@ -500,6 +552,7 @@ async function resetAllData() {
   if (!confirm('本当に削除しますか？この操作は取り消せません。')) return;
   await dbRequest('records', 'readwrite', (st) => st.clear());
   await dbRequest('masterOptions', 'readwrite', (st) => st.clear());
+  await dbRequest('meta', 'readwrite', (st) => st.clear()); // 登録番号カウンタも1へ戻す
   await seedDefaultsIfEmpty();
   await loadMasters();
   renderFormControls();
@@ -525,6 +578,7 @@ async function moveOption(catKey, idx, dir) {
 
 /* Excel書き出し列（順序固定）。見出しはインポート時のエイリアスと往復可能にしてある */
 const EXPORT_COLUMNS = [
+  ['登録番号', 'recordNo'], ['カウント', '__count'],
   ['手術日', 'surgeryDate'], ['ID', 'patientID'], ['年齢', 'age'],
   ['身長(cm)', 'heightCm'], ['体重(kg)', 'weightKg'], ['BMI', '__bmi'],
   ['性別', 'sex'], ['左右', 'side'], ['疾患名', 'diagnosis'], ['Crowe分類', 'croweGroup'],
@@ -582,7 +636,7 @@ function bmiOf(heightCm, weightKg) {
 }
 
 /* 取り込み時に認識するが記録には保存しない列（BMIは再計算するため） */
-const IGNORED_HEADERS = ['bmi'];
+const IGNORED_HEADERS = ['bmi', '登録番号', 'カウント'];
 
 function normalizeHeader(s) {
   return String(s).toLowerCase().replace(/[\s　]/g, '').replace(/（/g, '(').replace(/）/g, ')');
@@ -802,10 +856,11 @@ async function exportXLSX() {
   const records = await dbGetAll('records');
   if (!records.length) { toast('記録がありません'); return; }
   records.sort((a, b) => (a.surgeryDate || '').localeCompare(b.surgeryDate || ''));
-  const rows = records.map((r) => {
+  const rows = records.map((r, i) => {
     const o = {};
     for (const [header, field] of EXPORT_COLUMNS) {
-      if (typeof field === 'function') o[header] = field(r);
+      if (field === '__count') o[header] = i + 1; // 書き出しは手術日昇順なので i+1 がカウント
+      else if (typeof field === 'function') o[header] = field(r);
       else if (field === '__bmi') o[header] = bmiOf(r.heightCm, r.weightKg) ?? '';
       else o[header] = r[field] ?? '';
     }
@@ -921,15 +976,29 @@ async function importJSONFile(file) {
     return;
   }
 
-  const existing = new Map((await dbGetAll('records')).map((r) => [r.uuid, r]));
+  const existingArr = await dbGetAll('records');
+  const existing = new Map(existingArr.map((r) => [r.uuid, r]));
+
+  // 登録番号: 既存と衝突しなければ取り込み元の番号を維持、衝突・未付番なら自分のカウンタで採番
+  const usedNos = new Set(existingArr.map((r) => Number(r.recordNo)).filter(Boolean));
+  let nextNo = await getMeta('nextRecordNo', 1);
+  const maxUsed = usedNos.size ? Math.max(...usedNos) : 0;
+  if (nextNo <= maxUsed) nextNo = maxUsed + 1;
+
   const toPut = [];
   let added = 0, updated = 0, skipped = 0;
   for (const r of data.records) {
     if (!r.uuid) continue;
     const cur = existing.get(r.uuid);
-    if (!cur) { toPut.push(r); added++; }
-    else if ((r.updatedAt || '') > (cur.updatedAt || '')) { toPut.push(r); updated++; }
-    else skipped++;
+    if (!cur) {
+      const n = Number(r.recordNo);
+      if (n && !usedNos.has(n)) { r.recordNo = n; usedNos.add(n); if (n >= nextNo) nextNo = n + 1; }
+      else { r.recordNo = nextNo++; usedNos.add(r.recordNo); }
+      toPut.push(r); added++;
+    } else if ((r.updatedAt || '') > (cur.updatedAt || '')) {
+      r.recordNo = cur.recordNo; // 既存の登録番号を維持
+      toPut.push(r); updated++;
+    } else skipped++;
   }
 
   const incomingMasters = Array.isArray(data.masterOptions)
@@ -949,6 +1018,7 @@ async function importJSONFile(file) {
   if (!confirm(msg)) return;
 
   for (const r of toPut) await dbPut('records', r);
+  await setMeta('nextRecordNo', nextNo);
   await addMasterValues(newMasters);
   await refreshAfterDataChange();
   toast(`取り込み完了（新規 ${added}・更新 ${updated}）`);
@@ -1008,7 +1078,13 @@ async function importSheetFile(file) {
   msg += '\n実行しますか？';
   if (!confirm(msg)) return;
 
+  let nextNo = await getMeta('nextRecordNo', 1);
+  const maxUsed = existing.reduce((m, r) => Math.max(m, Number(r.recordNo) || 0), 0);
+  if (nextNo <= maxUsed) nextNo = maxUsed + 1;
+  for (const r of toAdd) r.recordNo = nextNo++;
+
   for (const r of toAdd) await dbPut('records', r);
+  await setMeta('nextRecordNo', nextNo);
   await addMasterValues(newMasters);
   await refreshAfterDataChange();
   toast(`${toAdd.length} 件を取り込みました`);
@@ -1033,6 +1109,7 @@ async function init() {
   db = await openDB();
   await seedDefaultsIfEmpty();
   await loadMasters();
+  await backfillRecordNos();
 
   renderFormControls();
   clearForm();

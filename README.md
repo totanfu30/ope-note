@@ -22,7 +22,7 @@ python3 -m http.server 8000
 
 ### records ストア（keyPath: uuid）
 
-手術日 / 患者ID / 年齢 / 身長(heightCm) / 体重(weightKg) / 性別 / 左右 / 疾患名 / Crowe分類 / 執刀医 / アプローチ /
+登録番号(recordNo) / 手術日 / 患者ID / 年齢 / 身長(heightCm) / 体重(weightKg) / 性別 / 左右 / 疾患名 / Crowe分類 / 執刀医 / アプローチ /
 手術時間 / 出血量 /
 Cup商品名(cupName) / Cupサイズ(cupSize) / Liner(linerType) /
 Stem商品名(stemName) / Stemサイズ(stemSize) / Headサイズ(headSize) / Head素材(headMaterial) /
@@ -33,6 +33,16 @@ uuid / createdAt / updatedAt / createdDevice / syncedAt
 - **Cup / Stem**: 商品名（選択式マスタ）＋サイズ（Cupは数字、Stemは数字＋文字の自由記載）
 - **Head**: サイズ（数字の自由記載）＋素材（選択式マスタ `headMaterial`）。※旧 `headType`（単一select）は廃止
 - **Liner**: 選択式（変更なし）
+
+### 通し番号（2種類）
+
+- **登録番号 `recordNo`（固定）**: 保存時に永続カウンタ（meta ストア）から採番。以後変わらず、削除しても欠番のまま再利用しない。マージ時は衝突しなければ取り込み元の番号を維持、衝突・未付番なら自分のカウンタで採番（Macがマスタ）。一覧・編集ヘッダ・Excel（登録番号列）に表示
+- **カウント番号（動的）**: 手術日昇順での順位。保存せず表示時に計算するため、途中に追加・削除すると自動で振り直される。一覧（カウント n/総数）・Excel（カウント列）に表示
+- DB v1→v2 で `meta` ストアを追加。既存記録には起動時に手術日昇順で `recordNo` をバックフィルする
+
+### meta ストア（keyPath: key）
+
+`nextRecordNo`（次に払い出す登録番号）など内部カウンタを保持
 
 ### masterOptions ストア（keyPath: id, autoIncrement）
 
