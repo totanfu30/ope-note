@@ -2,7 +2,7 @@
  * キャッシュ戦略: プリキャッシュ＋キャッシュ優先（アプリは完全静的のため）。
  * ファイルを更新したら CACHE_VERSION を上げること（古いキャッシュは activate で削除）。
  */
-const CACHE_VERSION = "ope-note-v2";
+const CACHE_VERSION = "ope-note-v3";
 
 const PRECACHE_URLS = [
   "./",
@@ -20,7 +20,9 @@ const PRECACHE_URLS = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_VERSION)
-      .then((cache) => cache.addAll(PRECACHE_URLS))
+      // cache:"reload" でブラウザのHTTPキャッシュを迂回し、必ず最新ファイルを取得して入れる
+      // （これがないと更新時に古い内容を再キャッシュしてしまう）
+      .then((cache) => cache.addAll(PRECACHE_URLS.map((u) => new Request(u, { cache: "reload" }))))
       .then(() => self.skipWaiting())
   );
 });
