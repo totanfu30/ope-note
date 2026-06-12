@@ -530,9 +530,11 @@ const EXPORT_COLUMNS = [
   ['性別', 'sex'], ['左右', 'side'], ['疾患名', 'diagnosis'], ['Crowe分類', 'croweGroup'],
   ['執刀医', 'surgeon'], ['アプローチ', 'approach'],
   ['手術時間(分)', 'operationTimeMin'], ['出血量(ml)', 'bloodLossML'],
-  ['cup名', 'cupName'], ['cupサイズ', 'cupSize'], ['liner種類', 'linerType'],
-  ['stem名', 'stemName'], ['stemサイズ', 'stemSize'],
-  ['headサイズ', 'headSize'], ['head素材', 'headMaterial'],
+  // Cup/Stem/Headはアプリ上は分割入力だが、Excelでは1セルに結合して書き出す
+  ['cup', (r) => [r.cupName, r.cupSize].filter(Boolean).join(' ')],
+  ['liner種類', 'linerType'],
+  ['stem', (r) => [r.stemName, r.stemSize].filter(Boolean).join(' ')],
+  ['head', (r) => [r.headSize, r.headMaterial].filter(Boolean).join(' ')],
   ['navigation名', 'navigationName'], ['navigation RI', 'navRI'], ['navigation RA', 'navRA'],
   ['実測RI', 'measuredRI'], ['実測RA', 'measuredRA'],
   ['メモ', 'memo'], ['手術記録', 'operativeNote'],
@@ -655,10 +657,20 @@ function dupKey(r) {
   return `${r.surgeryDate}|${r.patientID}|${r.side}`;
 }
 
+/* レコードが持つ全フィールド（emptyRecordの初期化用）。
+   Excelでは一部を結合列にするためEXPORT_COLUMNSとは1対1にならないので別途定義する。 */
+const RECORD_FIELDS = [
+  'surgeryDate', 'patientID', 'age', 'heightCm', 'weightKg',
+  'sex', 'side', 'diagnosis', 'croweGroup', 'surgeon', 'approach',
+  'operationTimeMin', 'bloodLossML',
+  'cupName', 'cupSize', 'linerType', 'stemName', 'stemSize', 'headSize', 'headMaterial',
+  'navigationName', 'navRI', 'navRA', 'measuredRI', 'measuredRA',
+  'memo', 'operativeNote',
+];
+
 function emptyRecord() {
   const rec = {};
-  for (const [, field] of EXPORT_COLUMNS) {
-    if (field === '__bmi') continue;
+  for (const field of RECORD_FIELDS) {
     rec[field] = (NUMERIC_FIELDS.includes(field) || FLOAT_FIELDS.includes(field)) ? null : '';
   }
   return rec;
@@ -793,7 +805,9 @@ async function exportXLSX() {
   const rows = records.map((r) => {
     const o = {};
     for (const [header, field] of EXPORT_COLUMNS) {
-      o[header] = (field === '__bmi') ? (bmiOf(r.heightCm, r.weightKg) ?? '') : (r[field] ?? '');
+      if (typeof field === 'function') o[header] = field(r);
+      else if (field === '__bmi') o[header] = bmiOf(r.heightCm, r.weightKg) ?? '';
+      else o[header] = r[field] ?? '';
     }
     return o;
   });
