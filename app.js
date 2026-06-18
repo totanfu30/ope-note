@@ -646,7 +646,7 @@ const IMPORT_ALIASES = {
   linerType:        ['liner種類', 'liner', 'liner名', 'ライナー', 'hxlpe'],
   stemName:         ['stem名', 'stem', 'ステム', 'ステム名', 'taperloc6ho', 'stem商品名'],
   stemSize:         ['stemサイズ', 'stemsize', 'ステムサイズ'],
-  headSize:         ['headサイズ', 'headsize', 'ヘッドサイズ', '骨頭サイズ', '骨頭径', 'head', 'ヘッド', '骨頭'],
+  headSize:         ['headサイズ', 'headsize', 'ヘッドサイズ', '骨頭サイズ', '骨頭径', 'head', 'ヘッド', '骨頭', '32-6delta'],
   headMaterial:     ['head素材', 'headmaterial', 'ヘッド素材', '骨頭素材'],
   navigationName:   ['navigation名', 'navigation', 'ナビゲーション', 'ナビ', 'nav', 'arhippinless'],
   navRI:            ['navigationri', 'navri', 'ナビri'],
