@@ -183,9 +183,16 @@
         <input type="search" id="filter-diagnosis" placeholder="疾患名で絞り込み">
         <input type="search" id="filter-surgeon" placeholder="執刀医で絞り込み">
       </div>
+      <div class="toolbar-actions">
+        <button id="btn-select-mode" class="btn-text">選択して送信</button>
+      </div>
     </div>
     <ul id="record-list" class="record-list"></ul>
     <p id="list-empty" class="empty-note" hidden>記録はまだありません</p>
+    <div id="select-bar" class="select-bar" hidden>
+      <span id="select-count">0件選択中</span>
+      <button id="btn-export-selected" class="btn-select-export">書き出して送信</button>
+    </div>
   </section>
 
   <!-- ============ 設定ビュー ============ -->
@@ -207,7 +214,7 @@
         <button id="btn-export-unsynced" class="btn-primary">未送信分を書き出して送信</button>
         <button id="btn-export-all-json" class="btn-secondary">全件JSONバックアップ</button>
       </div>
-      <p class="data-hint">iPhoneでは共有シートが開くので「AirDrop」でMacへ送信してください。</p>
+      <p class="data-hint">「選択して送信」は一覧タブから使えます。iPhoneでは共有シートが開くので「AirDrop」でMacへ送信してください。</p>
     </div>
 
     <div class="card">

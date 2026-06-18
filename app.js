@@ -6,7 +6,7 @@
  * ==================================================================== */
 
 const DB_NAME = 'openote';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 /* 選択式項目の定義: key=マスタのカテゴリ, field=記録レコードのフィールド名 */
 const CATEGORIES = [
@@ -28,8 +28,8 @@ const CHIP_CATS = ['sex', 'side', 'crowe'];
 
 /* 初回起動時に投入する選択肢 */
 const DEFAULT_OPTIONS = {
-  sex:        ['男性', '女性'],
-  side:       ['右', '左', '両側'],
+  sex:        ['M', 'F'],
+  side:       ['Rt', 'Lt', '両側'],
   diagnosis:  ['変形性股関節症', '大腿骨頭壊死症', '関節リウマチ', '大腿骨頸部骨折', 'その他'],
   crowe:      ['Group I', 'Group II', 'Group III', 'Group IV'],
   surgeon:    [],
@@ -45,6 +45,8 @@ let db = null;
 let masters = {};          // { category: [optionObj, ...] } sortOrder順
 let editingUuid = null;    // 編集中レコードのUUID（新規時はnull）
 let editingMeta = null;    // 編集中レコードの createdAt 等を保持
+let selectMode = false;
+let selectedUuids = new Set();
 
 /* ============================ IndexedDB ============================ */
 
@@ -64,6 +66,33 @@ function openDB() {
       // v2: 登録番号(recordNo)の永続カウンタなどを保持する meta ストア
       if (!d.objectStoreNames.contains('meta')) {
         d.createObjectStore('meta', { keyPath: 'key' });
+      }
+      // v3: 性別 男性→M/女性→F、左右 右→Rt/左→Lt の値移行
+      if (e.oldVersion > 0 && e.oldVersion < 3) {
+        const sexMap  = { '男性': 'M', '女性': 'F' };
+        const sideMap = { '右': 'Rt', '左': 'Lt' };
+        const t3 = e.target.transaction;
+        const migrate = (storeName, fn) => {
+          t3.objectStore(storeName).openCursor().onsuccess = (ev) => {
+            const cur = ev.target.result;
+            if (!cur) return;
+            fn(cur);
+            cur.continue();
+          };
+        };
+        migrate('records', (cur) => {
+          const r = cur.value;
+          if (sexMap[r.sex] || sideMap[r.side]) {
+            if (sexMap[r.sex])  r.sex  = sexMap[r.sex];
+            if (sideMap[r.side]) r.side = sideMap[r.side];
+            cur.update(r);
+          }
+        });
+        migrate('masterOptions', (cur) => {
+          const o = cur.value;
+          if (o.category === 'sex'  && sexMap[o.value])  { o.value = sexMap[o.value];  cur.update(o); }
+          if (o.category === 'side' && sideMap[o.value]) { o.value = sideMap[o.value]; cur.update(o); }
+        });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -429,6 +458,14 @@ async function renderList() {
   for (const rec of records) {
     const li = document.createElement('li');
     li.className = 'record-item';
+    if (selectMode && selectedUuids.has(rec.uuid)) li.classList.add('selected');
+
+    if (selectMode) {
+      const chk = document.createElement('div');
+      chk.className = 'record-check';
+      chk.innerHTML = selectedUuids.has(rec.uuid) ? '&#x2713;' : '';
+      li.appendChild(chk);
+    }
 
     const main = document.createElement('div');
     main.className = 'record-main';
@@ -444,23 +481,35 @@ async function renderList() {
     line2.textContent = [rec.diagnosis, rec.side, rec.surgeon].filter(Boolean).join(' / ') || '（詳細未入力）';
     main.appendChild(line1);
     main.appendChild(line2);
-    main.addEventListener('click', () => editRecord(rec));
-
-    const actions = document.createElement('div');
-    actions.className = 'record-actions';
-    const dup = document.createElement('button');
-    dup.className = 'btn-dup';
-    dup.textContent = '複製';
-    dup.addEventListener('click', (e) => { e.stopPropagation(); enterDuplicateMode(rec); });
-    const del = document.createElement('button');
-    del.className = 'btn-delete';
-    del.textContent = '削除';
-    del.addEventListener('click', (e) => { e.stopPropagation(); deleteRecord(rec); });
-    actions.appendChild(dup);
-    actions.appendChild(del);
+    if (selectMode) {
+      li.addEventListener('click', () => {
+        if (selectedUuids.has(rec.uuid)) selectedUuids.delete(rec.uuid);
+        else selectedUuids.add(rec.uuid);
+        updateSelectBar();
+        renderList();
+      });
+    } else {
+      main.addEventListener('click', () => editRecord(rec));
+    }
 
     li.appendChild(main);
-    li.appendChild(actions);
+
+    if (!selectMode) {
+      const actions = document.createElement('div');
+      actions.className = 'record-actions';
+      const dup = document.createElement('button');
+      dup.className = 'btn-dup';
+      dup.textContent = '複製';
+      dup.addEventListener('click', (e) => { e.stopPropagation(); enterDuplicateMode(rec); });
+      const del = document.createElement('button');
+      del.className = 'btn-delete';
+      del.textContent = '削除';
+      del.addEventListener('click', (e) => { e.stopPropagation(); deleteRecord(rec); });
+      actions.appendChild(dup);
+      actions.appendChild(del);
+      li.appendChild(actions);
+    }
+
     listEl.appendChild(li);
   }
 }
@@ -611,7 +660,7 @@ async function moveOption(catKey, idx, dir) {
 /* Excel書き出し列（順序固定）。見出しはインポート時のエイリアスと往復可能にしてある */
 const EXPORT_COLUMNS = [
   ['登録番号', 'recordNo'], ['カウント', '__count'],
-  ['手術日', 'surgeryDate'], ['ID', 'patientID'], ['年齢', 'age'],
+  ['ID', 'patientID'], ['手術日', (r) => (r.surgeryDate || '').replace(/-/g, '')], ['年齢', 'age'],
   ['身長(cm)', 'heightCm'], ['体重(kg)', 'weightKg'], ['BMI', '__bmi'],
   ['性別', 'sex'], ['左右', 'side'], ['疾患名', 'diagnosis'], ['Crowe分類', 'croweGroup'],
   ['執刀医', 'surgeon'], ['アプローチ', 'approach'],
@@ -619,8 +668,8 @@ const EXPORT_COLUMNS = [
   // Cup/Stem/Headはアプリ上は分割入力だが、Excelでは1セルに結合して書き出す
   ['cup', (r) => [r.cupName, r.cupSize].filter(Boolean).join(' ')],
   ['liner種類', 'linerType'],
-  ['stem', (r) => [r.stemName, r.stemSize].filter(Boolean).join(' ')],
   ['head', (r) => [r.headSize, r.headMaterial].filter(Boolean).join(' ')],
+  ['stem', (r) => [r.stemName, r.stemSize].filter(Boolean).join(' ')],
   ['navigation名', 'navigationName'], ['navigation RI', 'navRI'], ['navigation RA', 'navRA'],
   ['実測RI', 'measuredRI'], ['実測RA', 'measuredRA'],
   ['メモ', 'memo'], ['手術記録', 'operativeNote'],
@@ -719,15 +768,15 @@ function normalizeDateValue(v) {
   return '';
 }
 
-/* 性別・左右の略記を正規化（M/F, Rt/Lt 等 → マスタの正規値）*/
+/* 性別・左右の略記を正規化（各種表記 → マスタの正規値）*/
 const VALUE_MAP = {
   sex: {
-    'm': '男性', 'male': '男性', '男': '男性',
-    'f': '女性', 'female': '女性', '女': '女性',
+    'm': 'M', 'male': 'M', '男': 'M', '男性': 'M',
+    'f': 'F', 'female': 'F', '女': 'F', '女性': 'F',
   },
   side: {
-    'rt': '右', 'r': '右', 'right': '右', '右側': '右',
-    'lt': '左', 'l': '左', 'left': '左', '左側': '左',
+    'rt': 'Rt', 'r': 'Rt', 'right': 'Rt', '右': 'Rt', '右側': 'Rt',
+    'lt': 'Lt', 'l': 'Lt', 'left': 'Lt', '左': 'Lt', '左側': 'Lt',
     'bil': '両側', 'bilateral': '両側', '両': '両側', 'b': '両側',
   },
 };
@@ -880,6 +929,58 @@ async function exportJSON(onlyUnsynced) {
   downloadFile(file);
   if (onlyUnsynced && confirm(`${data.records.length} 件を書き出しました。「送信済み」にしますか？`)) {
     await markSynced(data.records);
+  }
+}
+
+/* ---------- 選択モード ---------- */
+
+function updateSelectBar() {
+  const bar = document.getElementById('select-bar');
+  const n = selectedUuids.size;
+  bar.hidden = n === 0;
+  document.getElementById('select-count').textContent = `${n}件選択中`;
+}
+
+function toggleSelectMode() {
+  selectMode = !selectMode;
+  selectedUuids.clear();
+  const btn = document.getElementById('btn-select-mode');
+  btn.textContent = selectMode ? '選択解除' : '選択して送信';
+  btn.classList.toggle('active', selectMode);
+  document.getElementById('select-bar').hidden = true;
+  renderList();
+}
+
+async function exportSelectedJSON() {
+  if (!selectedUuids.size) return;
+  const all = await dbGetAll('records');
+  const selected = all.filter((r) => selectedUuids.has(r.uuid));
+  const masterOptions = await dbGetAll('masterOptions');
+  const data = {
+    app: 'ope-note',
+    format: 1,
+    exportedAt: new Date().toISOString(),
+    device: deviceName(),
+    records: selected,
+    masterOptions: masterOptions.map(({ category, value, sortOrder, isActive }) =>
+      ({ category, value, sortOrder, isActive })),
+  };
+  const name = `openote_選択_${timestamp()}.json`;
+  const file = new File([JSON.stringify(data, null, 1)], name, { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: '手術記録データ' });
+      if (confirm(`${selected.length} 件を書き出しました。「送信済み」にしますか？`)) {
+        await markSynced(selected);
+      }
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+    }
+  }
+  downloadFile(file);
+  if (confirm(`${selected.length} 件を書き出しました。「送信済み」にしますか？`)) {
+    await markSynced(selected);
   }
 }
 
@@ -1131,7 +1232,10 @@ function switchView(name) {
   for (const b of document.querySelectorAll('.tabbar button')) {
     b.classList.toggle('active', b.dataset.view === name);
   }
-  if (name === 'list') renderList();
+  if (name === 'list') {
+    if (selectMode) { selectMode = false; selectedUuids.clear(); const btn = document.getElementById('btn-select-mode'); if (btn) { btn.textContent = '選択して送信'; btn.classList.remove('active'); } document.getElementById('select-bar').hidden = true; }
+    renderList();
+  }
   if (name === 'data') refreshCount();
 }
 
@@ -1169,6 +1273,8 @@ async function init() {
   // データ入出力
   document.getElementById('btn-export-unsynced').addEventListener('click', () => exportJSON(true));
   document.getElementById('btn-export-all-json').addEventListener('click', () => exportJSON(false));
+  document.getElementById('btn-select-mode').addEventListener('click', toggleSelectMode);
+  document.getElementById('btn-export-selected').addEventListener('click', exportSelectedJSON);
   document.getElementById('btn-export-xlsx').addEventListener('click', exportXLSX);
   document.getElementById('btn-export-encrypted').addEventListener('click', exportEncrypted);
 
