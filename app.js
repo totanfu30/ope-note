@@ -661,8 +661,9 @@ async function moveOption(catKey, idx, dir) {
 const EXPORT_COLUMNS = [
   ['登録番号', 'recordNo'], ['カウント', '__count'],
   ['ID', 'patientID'], ['手術日', (r) => (r.surgeryDate || '').replace(/-/g, '')], ['年齢', 'age'],
+  ['性別', 'sex'],
   ['身長(cm)', 'heightCm'], ['体重(kg)', 'weightKg'], ['BMI', '__bmi'],
-  ['性別', 'sex'], ['左右', 'side'], ['疾患名', 'diagnosis'], ['Crowe分類', 'croweGroup'],
+  ['左右', 'side'], ['疾患名', 'diagnosis'], ['Crowe分類', 'croweGroup'],
   ['執刀医', 'surgeon'], ['アプローチ', 'approach'],
   ['手術時間(分)', 'operationTimeMin'], ['出血量(ml)', 'bloodLossML'],
   // Cup/Stem/Headはアプリ上は分割入力だが、Excelでは1セルに結合して書き出す
@@ -945,7 +946,7 @@ function toggleSelectMode() {
   selectMode = !selectMode;
   selectedUuids.clear();
   const btn = document.getElementById('btn-select-mode');
-  btn.textContent = selectMode ? '選択解除' : '選択して送信';
+  btn.textContent = selectMode ? '選択解除' : '選択';
   btn.classList.toggle('active', selectMode);
   document.getElementById('select-bar').hidden = true;
   renderList();
@@ -984,10 +985,10 @@ async function exportSelectedJSON() {
   }
 }
 
-async function exportXLSX() {
-  if (typeof XLSX === 'undefined') { alert('Excelライブラリが読み込まれていません'); return; }
-  const records = await dbGetAll('records');
-  if (!records.length) { toast('記録がありません'); return; }
+/* 渡された records を手術日昇順でExcel(.xlsx)に書き出す共通処理 */
+function writeRecordsToXLSX(records) {
+  if (typeof XLSX === 'undefined') { alert('Excelライブラリが読み込まれていません'); return false; }
+  if (!records.length) { toast('記録がありません'); return false; }
   records.sort((a, b) => (a.surgeryDate || '').localeCompare(b.surgeryDate || ''));
   const rows = records.map((r, i) => {
     const o = {};
@@ -1003,7 +1004,19 @@ async function exportXLSX() {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '手術記録');
   XLSX.writeFile(wb, `手術記録_${timestamp()}.xlsx`);
-  toast(`${records.length} 件をExcelに書き出しました`);
+  return true;
+}
+
+async function exportXLSX() {
+  const records = await dbGetAll('records');
+  if (writeRecordsToXLSX(records)) toast(`${records.length} 件をExcelに書き出しました`);
+}
+
+async function exportSelectedXLSX() {
+  if (!selectedUuids.size) return;
+  const all = await dbGetAll('records');
+  const selected = all.filter((r) => selectedUuids.has(r.uuid));
+  if (writeRecordsToXLSX(selected)) toast(`${selected.length} 件をExcelに書き出しました`);
 }
 
 /* ---------- 暗号化バックアップ（Web Crypto: PBKDF2 + AES-256-GCM） ---------- */
@@ -1233,7 +1246,7 @@ function switchView(name) {
     b.classList.toggle('active', b.dataset.view === name);
   }
   if (name === 'list') {
-    if (selectMode) { selectMode = false; selectedUuids.clear(); const btn = document.getElementById('btn-select-mode'); if (btn) { btn.textContent = '選択して送信'; btn.classList.remove('active'); } document.getElementById('select-bar').hidden = true; }
+    if (selectMode) { selectMode = false; selectedUuids.clear(); const btn = document.getElementById('btn-select-mode'); if (btn) { btn.textContent = '選択'; btn.classList.remove('active'); } document.getElementById('select-bar').hidden = true; }
     renderList();
   }
   if (name === 'data') refreshCount();
@@ -1275,6 +1288,7 @@ async function init() {
   document.getElementById('btn-export-all-json').addEventListener('click', () => exportJSON(false));
   document.getElementById('btn-select-mode').addEventListener('click', toggleSelectMode);
   document.getElementById('btn-export-selected').addEventListener('click', exportSelectedJSON);
+  document.getElementById('btn-export-selected-xlsx').addEventListener('click', exportSelectedXLSX);
   document.getElementById('btn-export-xlsx').addEventListener('click', exportXLSX);
   document.getElementById('btn-export-encrypted').addEventListener('click', exportEncrypted);
 

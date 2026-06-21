@@ -380,8 +380,9 @@ input:focus, select:focus, textarea:focus {
   background: var(--accent);
   color: #fff;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   padding: 12px 16px;
   border-radius: var(--radius);
   z-index: 15;
@@ -389,18 +390,19 @@ input:focus, select:focus, textarea:focus {
 }
 
 #select-count {
-  flex: 1;
+  flex-basis: 100%;
   font-size: 14px;
   font-weight: 600;
 }
 
 .btn-select-export {
+  flex: 1;
   border: 2px solid #fff;
   background: transparent;
   color: #fff;
   font-size: 14px;
   font-weight: 600;
-  padding: 8px 16px;
+  padding: 8px 12px;
   border-radius: 8px;
   cursor: pointer;
   white-space: nowrap;
