@@ -372,6 +372,10 @@ input:focus, select:focus, textarea:focus {
   flex-shrink: 0;
 }
 
+.select-bar[hidden] {
+  display: none;
+}
+
 .select-bar {
   position: fixed;
   bottom: calc(env(safe-area-inset-bottom) + 56px + 8px);
