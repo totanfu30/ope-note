@@ -46,7 +46,7 @@ const DEFAULT_OPTIONS = {
   stem:         [],
   headMaterial: [],
   navigation:   ['NaviSwiss', 'なし'],
-  timepoint:    ['術前', '術後3M', '術後6M', '術後1Y', '術後2Y', 'その他'],
+  timepoint:    ['術前', '術後3M', '術後6M', '術後1Y'],
 };
 
 let db = null;
@@ -691,11 +691,11 @@ async function savePROMs() {
   const errs = promsRangeErrors(rec);
   if (errs.length) { toast(`範囲外の値: ${errs.join(' / ')}`); return; }
 
-  // 新規保存時、同じ患者ID×左右×時点が既にある場合は重複登録を確認（1スロット1件モデル）
+  // 新規保存時、同じ患者ID×時点が既にある場合は重複登録を確認（患者×時点で1件モデル）
   if (!editingPromsUuid) {
     const all = await dbGetAll('proms');
     if (all.some((r) => promsKey(r) === promsKey(rec))) {
-      if (!confirm('同じ患者・左右・時点の記録が既にあります。新規に追加しますか？\n（既存の記録を編集して上書きするのが推奨です）')) return;
+      if (!confirm('同じ患者・時点の記録が既にあります。新規に追加しますか？\n（既存の記録を編集して上書きするのが推奨です）')) return;
     }
   }
 
@@ -740,9 +740,10 @@ async function deletePROMs(rec) {
   await renderPromsList();
 }
 
-/* PROMsの自然キー（1患者×左右×時点で1レコード）。外部システム取込のスロット判定に使う。 */
+/* PROMsの自然キー。アンケートは患者×時点で1つ（左右は問わない＝両側でも同じスコア）。
+   そのため side はキーに含めず、患者ID×時点でスロットを判定する。外部システム取込でも同じ。 */
 function promsKey(r) {
-  return `${r.patientID || ''}|${r.side || ''}|${r.timepoint || ''}`;
+  return `${r.patientID || ''}|${r.timepoint || ''}`;
 }
 
 /* 項目単位マージ: target に incoming の「値がある」スコア欄と日付/メモのみ反映し、空欄は既存を温存する。
@@ -855,20 +856,19 @@ function renderPromsTimeseries() {
     if (!rows.length) return;
 
     const timepoints = activeValues('timepoint'); // sortOrder順
-    // 患者ID×左右でグルーピング
+    // 患者IDでグルーピング（アンケートは患者×時点で1つ。左右は区別しない）
     const groups = new Map();
     for (const r of rows) {
-      const gk = `${r.patientID}|${r.side || ''}`;
-      if (!groups.has(gk)) groups.set(gk, { patientID: r.patientID, side: r.side || '', byTp: new Map() });
+      const gk = r.patientID;
+      if (!groups.has(gk)) groups.set(gk, { patientID: r.patientID, byTp: new Map() });
       const g = groups.get(gk);
       const prev = g.byTp.get(r.timepoint);
       // 同スロット複数なら updatedAt 最新を採用
       if (!prev || (r.updatedAt || '') > (prev.updatedAt || '')) g.byTp.set(r.timepoint, r);
     }
-    // 患者ID→左右 で安定ソート
+    // 患者ID で安定ソート
     const sortedGroups = [...groups.values()].sort((a, b) =>
-      a.patientID.localeCompare(b.patientID, 'ja', { numeric: true }) ||
-      a.side.localeCompare(b.side));
+      a.patientID.localeCompare(b.patientID, 'ja', { numeric: true }));
 
     box.innerHTML = '';
     for (const g of sortedGroups) {
@@ -880,7 +880,7 @@ function renderPromsTimeseries() {
       wrap.className = 'ts-wrap';
       const cap = document.createElement('div');
       cap.className = 'ts-caption';
-      cap.textContent = `ID ${g.patientID}${g.side ? ' / ' + g.side : ''}`;
+      cap.textContent = `ID ${g.patientID}`;
       wrap.appendChild(cap);
 
       const scroll = document.createElement('div');
@@ -1608,7 +1608,7 @@ async function importJSONFile(file) {
 
   // PROMs のマージ（3分岐）:
   //  ① uuid 一致 → レコード丸ごと updatedAt 新しい方勝ち（同一レコードの別端末編集を尊重）
-  //  ② uuid 不一致だが 患者ID×左右×時点 が一致 → 同じスロットの別ソース。項目単位で埋める（既存uuid保持）
+  //  ② uuid 不一致だが 患者ID×時点 が一致 → 同じスロットの別ソース。項目単位で埋める（既存uuid保持）
   //  ③ どちらも不一致 → 新規追加
   const existingProms = await dbGetAll('proms');
   const promsByUuid = new Map(existingProms.map((r) => [r.uuid, r]));

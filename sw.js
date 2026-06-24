@@ -2,7 +2,7 @@
  * キャッシュ戦略: プリキャッシュ＋キャッシュ優先（アプリは完全静的のため）。
  * ファイルを更新したら CACHE_VERSION を上げること（古いキャッシュは activate で削除）。
  */
-const CACHE_VERSION = "ope-note-v15";
+const CACHE_VERSION = "ope-note-v16";
 
 const PRECACHE_URLS = [
   "./",
