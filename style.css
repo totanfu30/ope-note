@@ -228,6 +228,12 @@ input:focus, select:focus, textarea:focus {
   padding: 4px;
 }
 
+.card-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* ============ 一覧 ============ */
 
 .list-toolbar {

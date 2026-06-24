@@ -1799,6 +1799,9 @@ async function init() {
   document.getElementById('btn-proms-new').addEventListener('click', () => {
     if (confirm('編集を中止して新規入力に切り替えますか？（未保存の変更は破棄されます）')) clearPromsForm();
   });
+  document.getElementById('btn-proms-import').addEventListener('click', () => {
+    document.getElementById('file-input').click();
+  });
   document.getElementById('proms-filter-id').addEventListener('input', renderPromsList);
   document.getElementById('proms-filter-timepoint').addEventListener('change', renderPromsList);
   document.getElementById('proms-sort').addEventListener('change', renderPromsList);
