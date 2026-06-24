@@ -225,7 +225,23 @@
         </div>
       </div>
 
-      <h2 class="section-label">JHEQ（0–28 / 合計0–84）</h2>
+      <h2 class="section-label">総合スコア</h2>
+      <div class="field-grid field-grid-pairs">
+        <div class="field">
+          <label for="p-jheqTotal">JHEQ 合計（0–84）</label>
+          <input type="number" id="p-jheqTotal" inputmode="numeric" min="0" max="84" step="1">
+        </div>
+        <div class="field">
+          <label for="p-hoosJr">HOOS-JR（0–100）</label>
+          <input type="number" id="p-hoosJr" inputmode="decimal" min="0" max="100" step="0.001">
+        </div>
+        <div class="field">
+          <label for="p-fjs12">FJS-12（0–100）</label>
+          <input type="number" id="p-fjs12" inputmode="decimal" min="0" max="100" step="0.01">
+        </div>
+      </div>
+
+      <h2 class="section-label">JHEQ 因子別（各0–28）</h2>
       <div class="field-grid field-grid-pairs">
         <div class="field">
           <label for="p-jheqPain">痛み因子（0–28）</label>
@@ -238,22 +254,6 @@
         <div class="field">
           <label for="p-jheqMental">メンタル因子（0–28）</label>
           <input type="number" id="p-jheqMental" inputmode="numeric" min="0" max="28" step="1">
-        </div>
-        <div class="field">
-          <label for="p-jheqTotal">合計（0–84）</label>
-          <input type="number" id="p-jheqTotal" inputmode="numeric" min="0" max="84" step="1">
-        </div>
-      </div>
-
-      <h2 class="section-label">HOOS-JR / FJS-12（0–100）</h2>
-      <div class="field-grid field-grid-pairs">
-        <div class="field">
-          <label for="p-hoosJr">HOOS-JR（0–100）</label>
-          <input type="number" id="p-hoosJr" inputmode="decimal" min="0" max="100" step="0.001">
-        </div>
-        <div class="field">
-          <label for="p-fjs12">FJS-12（0–100）</label>
-          <input type="number" id="p-fjs12" inputmode="decimal" min="0" max="100" step="0.01">
         </div>
       </div>
 
@@ -293,6 +293,7 @@
         <select id="proms-filter-timepoint"></select>
       </div>
     </div>
+    <div id="proms-timeseries" class="proms-timeseries"></div>
     <ul id="proms-list" class="record-list"></ul>
     <p id="proms-empty" class="empty-note" hidden>PROMsはまだありません</p>
   </section>

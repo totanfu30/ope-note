@@ -691,6 +691,14 @@ async function savePROMs() {
   const errs = promsRangeErrors(rec);
   if (errs.length) { toast(`範囲外の値: ${errs.join(' / ')}`); return; }
 
+  // 新規保存時、同じ患者ID×左右×時点が既にある場合は重複登録を確認（1スロット1件モデル）
+  if (!editingPromsUuid) {
+    const all = await dbGetAll('proms');
+    if (all.some((r) => promsKey(r) === promsKey(rec))) {
+      if (!confirm('同じ患者・左右・時点の記録が既にあります。新規に追加しますか？\n（既存の記録を編集して上書きするのが推奨です）')) return;
+    }
+  }
+
   const now = new Date().toISOString();
   if (editingPromsUuid) {
     rec.uuid = editingPromsUuid;
@@ -730,6 +738,24 @@ async function deletePROMs(rec) {
   toast('削除しました');
   await refreshCount();
   await renderPromsList();
+}
+
+/* PROMsの自然キー（1患者×左右×時点で1レコード）。外部システム取込のスロット判定に使う。 */
+function promsKey(r) {
+  return `${r.patientID || ''}|${r.side || ''}|${r.timepoint || ''}`;
+}
+
+/* 項目単位マージ: target に incoming の「値がある」スコア欄と日付/メモのみ反映し、空欄は既存を温存する。
+   target の uuid・createdAt 等は保持。純関数（Nodeテスト用にDOM/DB非依存）。 */
+function mergePromsField(target, incoming) {
+  const merged = { ...target };
+  for (const s of PROMS_SCORE_FIELDS) {
+    const v = incoming[s.field];
+    if (v !== null && v !== undefined && v !== '') merged[s.field] = v;
+  }
+  if (incoming.assessmentDate) merged.assessmentDate = incoming.assessmentDate;
+  if (incoming.notes)          merged.notes = incoming.notes;
+  return merged;
 }
 
 /* 時点(timepoint)をマスタのsortOrder順で比較するための索引 */
@@ -802,6 +828,101 @@ async function renderPromsList() {
 
     listEl.appendChild(li);
   }
+
+  renderPromsTimeseries();
+}
+
+/* 時系列表（表示専用）: IDで絞り込んだ時だけ、患者ID×左右ごとに
+   JHEQ合計 / HOOS-JR / FJS-12 の推移を「行=スコア・列=時点」の表で見せる。 */
+const TIMESERIES_ROWS = [
+  { field: 'jheqTotal', label: 'JHEQ 合計' },
+  { field: 'hoosJr',    label: 'HOOS-JR' },
+  { field: 'fjs12',     label: 'FJS-12' },
+];
+
+function renderPromsTimeseries() {
+  const box = document.getElementById('proms-timeseries');
+  if (!box) return;
+  const fId = document.getElementById('proms-filter-id').value.trim();
+  box.innerHTML = '';
+  if (!fId) {
+    box.innerHTML = '<p class="data-hint">患者IDで絞り込むと、JHEQ/HOOS-JR/FJS-12 合計の推移表を表示します。</p>';
+    return;
+  }
+
+  dbGetAll('proms').then((all) => {
+    const rows = all.filter((r) => (r.patientID || '').toLowerCase().includes(fId.toLowerCase()));
+    if (!rows.length) return;
+
+    const timepoints = activeValues('timepoint'); // sortOrder順
+    // 患者ID×左右でグルーピング
+    const groups = new Map();
+    for (const r of rows) {
+      const gk = `${r.patientID}|${r.side || ''}`;
+      if (!groups.has(gk)) groups.set(gk, { patientID: r.patientID, side: r.side || '', byTp: new Map() });
+      const g = groups.get(gk);
+      const prev = g.byTp.get(r.timepoint);
+      // 同スロット複数なら updatedAt 最新を採用
+      if (!prev || (r.updatedAt || '') > (prev.updatedAt || '')) g.byTp.set(r.timepoint, r);
+    }
+    // 患者ID→左右 で安定ソート
+    const sortedGroups = [...groups.values()].sort((a, b) =>
+      a.patientID.localeCompare(b.patientID, 'ja', { numeric: true }) ||
+      a.side.localeCompare(b.side));
+
+    box.innerHTML = '';
+    for (const g of sortedGroups) {
+      // この患者で実際に値がある時点のみ列に出す（無ければ全標準時点）
+      const usedTps = timepoints.filter((tp) => g.byTp.has(tp));
+      const cols = usedTps.length ? usedTps : timepoints;
+
+      const wrap = document.createElement('div');
+      wrap.className = 'ts-wrap';
+      const cap = document.createElement('div');
+      cap.className = 'ts-caption';
+      cap.textContent = `ID ${g.patientID}${g.side ? ' / ' + g.side : ''}`;
+      wrap.appendChild(cap);
+
+      const scroll = document.createElement('div');
+      scroll.className = 'ts-scroll';
+      const table = document.createElement('table');
+      table.className = 'ts-table';
+
+      const thead = document.createElement('thead');
+      const htr = document.createElement('tr');
+      const corner = document.createElement('th');
+      corner.textContent = 'スコア＼時点';
+      htr.appendChild(corner);
+      for (const tp of cols) {
+        const th = document.createElement('th');
+        th.textContent = tp;
+        htr.appendChild(th);
+      }
+      thead.appendChild(htr);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      for (const row of TIMESERIES_ROWS) {
+        const tr = document.createElement('tr');
+        const rh = document.createElement('th');
+        rh.scope = 'row';
+        rh.textContent = row.label;
+        tr.appendChild(rh);
+        for (const tp of cols) {
+          const td = document.createElement('td');
+          const rec = g.byTp.get(tp);
+          const v = rec ? rec[row.field] : null;
+          td.textContent = (v === null || v === undefined || v === '') ? '－' : v;
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      scroll.appendChild(table);
+      wrap.appendChild(scroll);
+      box.appendChild(wrap);
+    }
+  });
 }
 
 /* ============================ 設定（マスタ管理） ============================ */
@@ -1485,18 +1606,37 @@ async function importJSONFile(file) {
     } else skipped++;
   }
 
-  // PROMs も records と同じく uuid マージ（新規追加 / updatedAt 新しい方で更新 / それ以外スキップ）
+  // PROMs のマージ（3分岐）:
+  //  ① uuid 一致 → レコード丸ごと updatedAt 新しい方勝ち（同一レコードの別端末編集を尊重）
+  //  ② uuid 不一致だが 患者ID×左右×時点 が一致 → 同じスロットの別ソース。項目単位で埋める（既存uuid保持）
+  //  ③ どちらも不一致 → 新規追加
   const existingProms = await dbGetAll('proms');
-  const promsMap = new Map(existingProms.map((r) => [r.uuid, r]));
+  const promsByUuid = new Map(existingProms.map((r) => [r.uuid, r]));
+  const promsByKey = new Map(existingProms.map((r) => [promsKey(r), r]));
   const promsToPut = [];
-  let pAdded = 0, pUpdated = 0, pSkipped = 0;
+  const nowIso = new Date().toISOString();
+  let pAdded = 0, pUpdated = 0, pFilled = 0, pSkipped = 0;
   if (Array.isArray(data.proms)) {
     for (const r of data.proms) {
       if (!r.uuid) continue;
-      const cur = promsMap.get(r.uuid);
-      if (!cur) { promsToPut.push(r); pAdded++; }
-      else if ((r.updatedAt || '') > (cur.updatedAt || '')) { promsToPut.push(r); pUpdated++; }
-      else pSkipped++;
+      const byUuid = promsByUuid.get(r.uuid);
+      if (byUuid) {
+        if ((r.updatedAt || '') > (byUuid.updatedAt || '')) { promsToPut.push(r); pUpdated++; }
+        else pSkipped++;
+        continue;
+      }
+      const byKey = promsByKey.get(promsKey(r));
+      if (byKey) {
+        // 既存スロットへ項目単位で反映（既存uuidは保持）。変更があった時だけ書き戻す。
+        const merged = mergePromsField(byKey, r);
+        if (JSON.stringify(merged) !== JSON.stringify(byKey)) {
+          merged.updatedAt = nowIso;
+          merged.syncedAt = null; // マージ結果を他端末へ再伝播
+          promsToPut.push(merged); pFilled++;
+        } else pSkipped++;
+      } else {
+        promsToPut.push(r); pAdded++;
+      }
     }
   }
 
@@ -1513,7 +1653,7 @@ async function importJSONFile(file) {
   }
 
   const msg = `${file.name}\n記録: 新規 ${added} / 更新 ${updated} / 変更なし ${skipped}\n` +
-    `PROMs: 新規 ${pAdded} / 更新 ${pUpdated} / 変更なし ${pSkipped}\n` +
+    `PROMs: 新規 ${pAdded} / 更新 ${pUpdated} / 項目埋め ${pFilled} / 変更なし ${pSkipped}\n` +
     `選択肢マスタへの追加: ${newMasters.length} 件\n取り込みますか？`;
   if (!confirm(msg)) return;
 
@@ -1522,7 +1662,7 @@ async function importJSONFile(file) {
   await setMeta('nextRecordNo', nextNo);
   await addMasterValues(newMasters);
   await refreshAfterDataChange();
-  toast(`取り込み完了（記録 新規${added}・更新${updated} / PROMs 新規${pAdded}・更新${pUpdated}）`);
+  toast(`取り込み完了（記録 新規${added}・更新${updated} / PROMs 新規${pAdded}・更新${pUpdated}・項目埋め${pFilled}）`);
 }
 
 async function importSheetFile(file) {

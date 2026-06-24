@@ -652,6 +652,52 @@ input:focus, select:focus, textarea:focus {
 
 .toast.show { opacity: 1; }
 
+/* ============ PROMs 時系列表 ============ */
+
+.proms-timeseries { margin: 8px 0 14px; }
+
+.ts-wrap {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.ts-caption {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.ts-scroll { overflow-x: auto; }
+
+.ts-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+
+.ts-table th,
+.ts-table td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.ts-table thead th {
+  background: #f3f4f6;
+  color: var(--text-sub);
+  font-weight: 600;
+}
+
+.ts-table th[scope="row"] {
+  background: #f9fafb;
+  text-align: left;
+  font-weight: 600;
+}
+
 /* ============ Mac等の広い画面 ============ */
 
 @media (min-width: 640px) {
