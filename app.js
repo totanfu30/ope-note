@@ -6,7 +6,7 @@
  * ==================================================================== */
 
 const DB_NAME = 'openote';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 /* 選択式項目の定義: key=マスタのカテゴリ, field=記録レコードのフィールド名 */
 const CATEGORIES = [
@@ -22,6 +22,13 @@ const CATEGORIES = [
   { key: 'headMaterial', label: 'Head 素材',  field: 'headMaterial' },
   { key: 'navigation',   label: 'Navigation', field: 'navigationName' },
 ];
+
+/* PROMsタブ専用の選択式カテゴリ。records入力フォーム・records取込には出さないため
+   CATEGORIESとは分離し、マスタ初期化・設定画面でのみ ALL_CATEGORIES として結合する。 */
+const PROMS_CATEGORIES = [
+  { key: 'timepoint', label: '時点', field: 'timepoint' },
+];
+const ALL_CATEGORIES = CATEGORIES.concat(PROMS_CATEGORIES);
 
 /* チップ（ボタン）表示にするカテゴリ。それ以外はプルダウン */
 const CHIP_CATS = ['sex', 'side', 'crowe'];
@@ -39,6 +46,7 @@ const DEFAULT_OPTIONS = {
   stem:         [],
   headMaterial: [],
   navigation:   ['NaviSwiss', 'なし'],
+  timepoint:    ['術前', '術後3M', '術後6M', '術後1Y', '術後2Y', 'その他'],
 };
 
 let db = null;
@@ -47,6 +55,8 @@ let editingUuid = null;    // 編集中レコードのUUID（新規時はnull）
 let editingMeta = null;    // 編集中レコードの createdAt 等を保持
 let selectMode = false;
 let selectedUuids = new Set();
+let editingPromsUuid = null;  // 編集中PROMsのUUID（新規時はnull）
+let editingPromsMeta = null;  // 編集中PROMsの createdAt 等を保持
 
 /* ============================ IndexedDB ============================ */
 
@@ -66,6 +76,12 @@ function openDB() {
       // v2: 登録番号(recordNo)の永続カウンタなどを保持する meta ストア
       if (!d.objectStoreNames.contains('meta')) {
         d.createObjectStore('meta', { keyPath: 'key' });
+      }
+      // v4: PROMs（算出済みスコアの縦断登録）ストア。contains ガードにより
+      // 新規インストール(oldVersion 0)・既存更新(3→4)の両方を安全にカバーする。
+      if (!d.objectStoreNames.contains('proms')) {
+        const pr = d.createObjectStore('proms', { keyPath: 'uuid' });
+        pr.createIndex('patientID', 'patientID');
       }
       // v3: 性別 男性→M/女性→F、左右 右→Rt/左→Lt の値移行
       if (e.oldVersion > 0 && e.oldVersion < 3) {
@@ -184,7 +200,7 @@ function numOrNull(v) {
 async function loadMasters() {
   const all = await dbGetAll('masterOptions');
   masters = {};
-  for (const c of CATEGORIES) masters[c.key] = [];
+  for (const c of ALL_CATEGORIES) masters[c.key] = [];
   for (const o of all) {
     if (masters[o.category]) masters[o.category].push(o);
   }
@@ -200,6 +216,17 @@ async function seedDefaultsIfEmpty() {
     for (let i = 0; i < values.length; i++) {
       await dbPut('masterOptions', { category, value: values[i], sortOrder: i, isActive: true });
     }
+  }
+}
+
+/* 既存ユーザー（masterOptionsが既に存在しseedDefaultsIfEmptyが発火しない）にも
+   新カテゴリ(timepoint)の既定選択肢を確実に投入する。該当カテゴリが空の時だけ実行。 */
+async function seedCategoryIfEmpty(category) {
+  const all = await dbGetAll('masterOptions');
+  if (all.some((o) => o.category === category)) return;
+  const values = DEFAULT_OPTIONS[category] || [];
+  for (let i = 0; i < values.length; i++) {
+    await dbPut('masterOptions', { category, value: values[i], sortOrder: i, isActive: true });
   }
 }
 
@@ -516,12 +543,265 @@ async function renderList() {
 
 async function refreshCount() {
   const records = await dbGetAll('records');
-  document.getElementById('record-count').textContent = `全 ${records.length} 件`;
-  const unsynced = records.filter((r) => !r.syncedAt).length;
+  const proms = await dbGetAll('proms');
+  document.getElementById('record-count').textContent = `記録 ${records.length} 件 / PROMs ${proms.length} 件`;
+  const unsynced = records.filter((r) => !r.syncedAt).length + proms.filter((r) => !r.syncedAt).length;
   const badge = document.getElementById('tab-badge');
   badge.hidden = unsynced === 0;
   badge.textContent = unsynced;
   document.getElementById('unsynced-count').textContent = unsynced;
+}
+
+/* ============================ PROMs（術後アウトカム縦断登録） ============================ */
+/* 算出済みスコアのみを手入力で登録する。生回答の入力・自動計算はしない（別系統が担当）。
+   1患者×左右×時点ごとに1レコード。患者IDで手術記録(records)と紐付ける。 */
+
+/* スコア欄の定義: id=入力要素のサフィックス, field=レコードのフィールド名, min/max=妥当範囲。
+   JHEQのレンジは公式参照台帳に基づく（痛み/動作/メンタル各0-28、総点0-84）。
+   vas:true の項目は vasScale 設定(100/10)で上限が変わる。 */
+const PROMS_SCORE_FIELDS = [
+  { id: 'jheqPain',        field: 'jheqPain',        label: 'JHEQ 痛み',    min: 0, max: 28 },
+  { id: 'jheqMovement',    field: 'jheqMovement',    label: 'JHEQ 動作',    min: 0, max: 28 },
+  { id: 'jheqMental',      field: 'jheqMental',      label: 'JHEQ メンタル', min: 0, max: 28 },
+  { id: 'jheqTotal',       field: 'jheqTotal',       label: 'JHEQ 合計',    min: 0, max: 84 },
+  { id: 'hoosJr',          field: 'hoosJr',          label: 'HOOS-JR',      min: 0, max: 100 },
+  { id: 'fjs12',           field: 'fjs12',           label: 'FJS-12',       min: 0, max: 100 },
+  { id: 'vasPain',         field: 'vasPain',         label: 'VAS 痛み',     min: 0, max: 100, vas: true },
+  { id: 'vasSatisfaction', field: 'vasSatisfaction', label: 'VAS 満足度',   min: 0, max: 100, vas: true },
+];
+
+/* PROMsで使う選択式（records側のチップとは独立した素のselect） */
+const PROMS_CHOICE_FIELDS = [
+  { id: 'p-side',      catKey: 'side',      field: 'side' },
+  { id: 'p-timepoint', catKey: 'timepoint', field: 'timepoint' },
+];
+
+let vasScale = 100; // VAS上限（100mm 既定 / 10 へ切替可）。init/設定で meta から読み込む
+
+/* スコアの妥当範囲チェック。vas項目は vasScale を上限に使う。範囲外なら不正な項目ラベルを返す。 */
+function promsRangeErrors(rec) {
+  const errs = [];
+  for (const s of PROMS_SCORE_FIELDS) {
+    const v = rec[s.field];
+    if (v === null || v === undefined || v === '') continue;
+    const n = Number(v);
+    const max = s.vas ? vasScale : s.max;
+    if (isNaN(n) || n < s.min || n > max) errs.push(`${s.label}(${s.min}–${max})`);
+  }
+  return errs;
+}
+
+/* side・timepoint のselectをマスタから再構築（現在の選択値は維持） */
+function renderPromsControls() {
+  for (const c of PROMS_CHOICE_FIELDS) {
+    const sel = document.getElementById(c.id);
+    if (!sel) continue;
+    const current = sel.value;
+    sel.innerHTML = '';
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = '未選択';
+    sel.appendChild(empty);
+    for (const v of activeValues(c.catKey)) {
+      const op = document.createElement('option');
+      op.value = v;
+      op.textContent = v;
+      sel.appendChild(op);
+    }
+    setSelectValue(sel, current);
+  }
+  // 一覧の時点フィルタ（先頭は「すべての時点」）も再構築
+  const tpFilter = document.getElementById('proms-filter-timepoint');
+  if (tpFilter) {
+    const cur = tpFilter.value;
+    tpFilter.innerHTML = '';
+    const all = document.createElement('option');
+    all.value = '';
+    all.textContent = 'すべての時点';
+    tpFilter.appendChild(all);
+    for (const v of activeValues('timepoint')) {
+      const op = document.createElement('option');
+      op.value = v; op.textContent = v;
+      tpFilter.appendChild(op);
+    }
+    if ([...tpFilter.options].some((o) => o.value === cur)) tpFilter.value = cur;
+  }
+  applyVasScaleToInputs();
+}
+
+async function loadVasScale() {
+  vasScale = Number(await getMeta('vasScale', 100)) || 100;
+}
+
+async function setVasScale(scale) {
+  vasScale = Number(scale) || 100;
+  await setMeta('vasScale', vasScale);
+  applyVasScaleToInputs();
+}
+
+/* VAS入力欄の max/placeholder を現在の vasScale に合わせる */
+function applyVasScaleToInputs() {
+  for (const s of PROMS_SCORE_FIELDS) {
+    if (!s.vas) continue;
+    const el = document.getElementById(`p-${s.id}`);
+    if (el) { el.max = vasScale; el.placeholder = `0–${vasScale}`; }
+  }
+}
+
+function collectPromsForm() {
+  const rec = {
+    patientID:      document.getElementById('p-patientId').value.trim(),
+    assessmentDate: document.getElementById('p-date').value,
+    notes:          document.getElementById('p-notes').value,
+  };
+  for (const c of PROMS_CHOICE_FIELDS) {
+    rec[c.field] = document.getElementById(c.id).value;
+  }
+  for (const s of PROMS_SCORE_FIELDS) {
+    rec[s.field] = numOrNull(document.getElementById(`p-${s.id}`).value);
+  }
+  return rec;
+}
+
+function fillPromsForm(rec) {
+  document.getElementById('p-patientId').value = rec.patientID || '';
+  document.getElementById('p-date').value      = rec.assessmentDate || '';
+  document.getElementById('p-notes').value     = rec.notes || '';
+  for (const c of PROMS_CHOICE_FIELDS) {
+    setSelectValue(document.getElementById(c.id), rec[c.field] || '');
+  }
+  for (const s of PROMS_SCORE_FIELDS) {
+    document.getElementById(`p-${s.id}`).value = rec[s.field] ?? '';
+  }
+  renderPromsControls();
+}
+
+function clearPromsForm() {
+  editingPromsUuid = null;
+  editingPromsMeta = null;
+  fillPromsForm({ assessmentDate: todayStr() });
+  document.getElementById('proms-mode-label').textContent = '新規PROMs';
+  document.getElementById('btn-proms-new').hidden = true;
+}
+
+async function savePROMs() {
+  const rec = collectPromsForm();
+  if (!rec.patientID)  { toast('患者IDを入力してください'); return; }
+  if (!rec.timepoint)  { toast('時点を選択してください'); return; }
+  const errs = promsRangeErrors(rec);
+  if (errs.length) { toast(`範囲外の値: ${errs.join(' / ')}`); return; }
+
+  const now = new Date().toISOString();
+  if (editingPromsUuid) {
+    rec.uuid = editingPromsUuid;
+    rec.createdAt = editingPromsMeta.createdAt;
+    rec.createdDevice = editingPromsMeta.createdDevice;
+    rec.syncedAt = editingPromsMeta.syncedAt ?? null;
+  } else {
+    rec.uuid = genUUID();
+    rec.createdAt = now;
+    rec.createdDevice = deviceName();
+    rec.syncedAt = null;
+  }
+  rec.updatedAt = now;
+
+  await dbPut('proms', rec);
+  toast(editingPromsUuid ? 'PROMsを更新しました' : 'PROMsを保存しました');
+  clearPromsForm();
+  await refreshCount();
+  await renderPromsList();
+}
+
+async function editPROMs(rec) {
+  editingPromsUuid = rec.uuid;
+  editingPromsMeta = { createdAt: rec.createdAt, createdDevice: rec.createdDevice, syncedAt: rec.syncedAt };
+  fillPromsForm(rec);
+  document.getElementById('proms-mode-label').textContent =
+    `編集中: ID ${rec.patientID || '－'} / ${rec.side || '－'} / ${rec.timepoint || '－'}`;
+  document.getElementById('btn-proms-new').hidden = false;
+  window.scrollTo({ top: 0 });
+}
+
+async function deletePROMs(rec) {
+  const label = `ID ${rec.patientID || '－'} / ${rec.side || ''} / ${rec.timepoint || ''} / ${rec.assessmentDate || ''}`;
+  if (!confirm(`このPROMs記録を削除しますか？\n${label}`)) return;
+  await dbDelete('proms', rec.uuid);
+  if (editingPromsUuid === rec.uuid) clearPromsForm();
+  toast('削除しました');
+  await refreshCount();
+  await renderPromsList();
+}
+
+/* 時点(timepoint)をマスタのsortOrder順で比較するための索引 */
+function timepointOrder() {
+  const order = new Map();
+  (masters['timepoint'] || []).forEach((o, i) => order.set(o.value, i));
+  return order;
+}
+
+async function renderPromsList() {
+  const listEl = document.getElementById('proms-list');
+  const emptyEl = document.getElementById('proms-empty');
+  if (!listEl) return;
+  const fId = document.getElementById('proms-filter-id').value.trim().toLowerCase();
+  const fTp = document.getElementById('proms-filter-timepoint').value;
+  const sortKey = document.getElementById('proms-sort').value;
+
+  let rows = await dbGetAll('proms');
+  rows = rows.filter((r) =>
+    (!fId || (r.patientID || '').toLowerCase().includes(fId)) &&
+    (!fTp || r.timepoint === fTp));
+
+  const tpOrder = timepointOrder();
+  const byPatient = (a, b) =>
+    (a.patientID || '').localeCompare(b.patientID || '', 'ja', { numeric: true }) ||
+    ((tpOrder.get(a.timepoint) ?? 99) - (tpOrder.get(b.timepoint) ?? 99)) ||
+    (a.assessmentDate || '').localeCompare(b.assessmentDate || '');
+  const byDate = (a, b) =>
+    (a.assessmentDate || '').localeCompare(b.assessmentDate || '') ||
+    (a.patientID || '').localeCompare(b.patientID || '', 'ja', { numeric: true });
+
+  if (sortKey === 'patient') rows.sort(byPatient);
+  else if (sortKey === 'date-desc') rows.sort((a, b) => -byDate(a, b));
+  else rows.sort(byDate); // date-asc
+
+  listEl.innerHTML = '';
+  emptyEl.hidden = rows.length > 0;
+  emptyEl.textContent = (fId || fTp) ? '該当するPROMsがありません' : 'PROMsはまだありません';
+
+  for (const rec of rows) {
+    const li = document.createElement('li');
+    li.className = 'record-item';
+
+    const main = document.createElement('div');
+    main.className = 'record-main';
+    const line1 = document.createElement('div');
+    line1.className = 'record-line1';
+    line1.textContent = `ID: ${rec.patientID || '－'}　${[rec.side, rec.timepoint].filter(Boolean).join(' / ') || ''}`;
+    const line2 = document.createElement('div');
+    line2.className = 'record-line2';
+    const parts = [];
+    if (rec.assessmentDate) parts.push(rec.assessmentDate);
+    const scoreBits = PROMS_SCORE_FIELDS
+      .filter((s) => rec[s.field] !== null && rec[s.field] !== undefined && rec[s.field] !== '')
+      .map((s) => `${s.label.replace('JHEQ ', 'J:').replace('VAS ', 'V:')}${rec[s.field]}`);
+    line2.textContent = [parts.join(' '), scoreBits.join(' / ')].filter(Boolean).join('　') || '（スコア未入力）';
+    main.appendChild(line1);
+    main.appendChild(line2);
+    main.addEventListener('click', () => editPROMs(rec));
+    li.appendChild(main);
+
+    const actions = document.createElement('div');
+    actions.className = 'record-actions';
+    const del = document.createElement('button');
+    del.className = 'btn-delete';
+    del.textContent = '削除';
+    del.addEventListener('click', (e) => { e.stopPropagation(); deletePROMs(rec); });
+    actions.appendChild(del);
+    li.appendChild(actions);
+
+    listEl.appendChild(li);
+  }
 }
 
 /* ============================ 設定（マスタ管理） ============================ */
@@ -530,7 +810,7 @@ async function renderSettings() {
   const container = document.getElementById('settings-list');
   container.innerHTML = '';
 
-  for (const c of CATEGORIES) {
+  for (const c of ALL_CATEGORIES) {
     const options = masters[c.key];
     const details = document.createElement('details');
     details.className = 'settings-group';
@@ -606,6 +886,7 @@ async function refreshSettingsKeepOpen() {
     if (states[d.dataset.cat]) d.open = true;
   }
   renderFormControls();
+  renderPromsControls();
 }
 
 async function addOption(catKey, rawValue) {
@@ -632,15 +913,19 @@ async function resetAllData() {
   if (!confirm(`全 ${records.length} 件の記録とすべての選択肢マスタを削除して初期状態に戻します。よろしいですか？`)) return;
   if (!confirm('本当に削除しますか？この操作は取り消せません。')) return;
   await dbRequest('records', 'readwrite', (st) => st.clear());
+  await dbRequest('proms', 'readwrite', (st) => st.clear());
   await dbRequest('masterOptions', 'readwrite', (st) => st.clear());
   await dbRequest('meta', 'readwrite', (st) => st.clear()); // 登録番号カウンタも1へ戻す
   await seedDefaultsIfEmpty();
   await loadMasters();
   renderFormControls();
+  renderPromsControls();
   clearForm();
+  clearPromsForm();
   await renderSettings();
   await refreshCount();
   await renderList();
+  await renderPromsList();
   toast('初期化しました');
 }
 
@@ -863,6 +1148,7 @@ async function addMasterValues(list) {
 async function refreshAfterDataChange() {
   await refreshCount();
   await renderList();
+  await renderPromsList();
 }
 
 /* ---------- エクスポート ---------- */
@@ -886,6 +1172,7 @@ function downloadFile(file) {
 
 async function buildExportData(onlyUnsynced) {
   const records = await dbGetAll('records');
+  const proms = await dbGetAll('proms');
   const masterOptions = await dbGetAll('masterOptions');
   return {
     app: 'ope-note',
@@ -893,6 +1180,7 @@ async function buildExportData(onlyUnsynced) {
     exportedAt: new Date().toISOString(),
     device: deviceName(),
     records: onlyUnsynced ? records.filter((r) => !r.syncedAt) : records,
+    proms: onlyUnsynced ? proms.filter((r) => !r.syncedAt) : proms,
     masterOptions: masterOptions.map(({ category, value, sortOrder, isActive }) =>
       ({ category, value, sortOrder, isActive })),
   };
@@ -907,20 +1195,30 @@ async function markSynced(records) {
   await refreshCount();
 }
 
+async function markSyncedProms(proms) {
+  const now = new Date().toISOString();
+  for (const r of proms) {
+    r.syncedAt = now;
+    await dbPut('proms', r);
+  }
+  await refreshCount();
+}
+
 async function exportJSON(onlyUnsynced) {
   const data = await buildExportData(onlyUnsynced);
-  if (onlyUnsynced && data.records.length === 0) {
-    toast('未送信の記録はありません');
+  if (onlyUnsynced && data.records.length === 0 && data.proms.length === 0) {
+    toast('未送信のデータはありません');
     return;
   }
+  const summary = `記録 ${data.records.length} 件・PROMs ${data.proms.length} 件`;
   const name = onlyUnsynced ? `openote_未送信_${timestamp()}.json` : `openote_全件_${timestamp()}.json`;
   const file = new File([JSON.stringify(data, null, 1)], name, { type: 'application/json' });
 
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: '手術記録データ' });
-      if (onlyUnsynced) await markSynced(data.records);
-      toast(`${data.records.length} 件を書き出しました`);
+      if (onlyUnsynced) { await markSynced(data.records); await markSyncedProms(data.proms); }
+      toast(`${summary} を書き出しました`);
       return;
     } catch (e) {
       if (e.name === 'AbortError') return; // キャンセル時は送信済みにしない
@@ -928,8 +1226,9 @@ async function exportJSON(onlyUnsynced) {
     }
   }
   downloadFile(file);
-  if (onlyUnsynced && confirm(`${data.records.length} 件を書き出しました。「送信済み」にしますか？`)) {
+  if (onlyUnsynced && confirm(`${summary} を書き出しました。「送信済み」にしますか？`)) {
     await markSynced(data.records);
+    await markSyncedProms(data.proms);
   }
 }
 
@@ -1017,6 +1316,45 @@ async function exportSelectedXLSX() {
   const all = await dbGetAll('records');
   const selected = all.filter((r) => selectedUuids.has(r.uuid));
   if (writeRecordsToXLSX(selected)) toast(`${selected.length} 件をExcelに書き出しました`);
+}
+
+/* PROMs縦断シートの列定義（行=患者×左右×時点、列=各スコア） */
+const PROMS_EXPORT_COLUMNS = [
+  ['患者ID', 'patientID'], ['左右', 'side'], ['時点', 'timepoint'],
+  ['評価日', (r) => (r.assessmentDate || '').replace(/-/g, '')],
+  ['JHEQ痛み', 'jheqPain'], ['JHEQ動作', 'jheqMovement'], ['JHEQメンタル', 'jheqMental'], ['JHEQ合計', 'jheqTotal'],
+  ['HOOS-JR', 'hoosJr'], ['FJS-12', 'fjs12'],
+  ['VAS痛み', 'vasPain'], ['VAS満足度', 'vasSatisfaction'],
+  ['メモ', 'notes'],
+];
+
+/* PROMsを患者ID→時点(sortOrder)→評価日 で整列してExcel(.xlsx)に書き出す */
+function writePromsToXLSX(proms) {
+  if (typeof XLSX === 'undefined') { alert('Excelライブラリが読み込まれていません'); return false; }
+  if (!proms.length) { toast('PROMsがありません'); return false; }
+  const tpOrder = timepointOrder();
+  proms.sort((a, b) =>
+    (a.patientID || '').localeCompare(b.patientID || '', 'ja', { numeric: true }) ||
+    ((tpOrder.get(a.timepoint) ?? 99) - (tpOrder.get(b.timepoint) ?? 99)) ||
+    (a.assessmentDate || '').localeCompare(b.assessmentDate || ''));
+  const rows = proms.map((r) => {
+    const o = {};
+    for (const [header, field] of PROMS_EXPORT_COLUMNS) {
+      if (typeof field === 'function') o[header] = field(r);
+      else o[header] = r[field] ?? '';
+    }
+    return o;
+  });
+  const ws = XLSX.utils.json_to_sheet(rows, { header: PROMS_EXPORT_COLUMNS.map((c) => c[0]) });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'PROMs');
+  XLSX.writeFile(wb, `PROMs_${timestamp()}.xlsx`);
+  return true;
+}
+
+async function exportPromsXLSX() {
+  const proms = await dbGetAll('proms');
+  if (writePromsToXLSX(proms)) toast(`PROMs ${proms.length} 件をExcelに書き出しました`);
 }
 
 /* ---------- 暗号化バックアップ（Web Crypto: PBKDF2 + AES-256-GCM） ---------- */
@@ -1147,6 +1485,21 @@ async function importJSONFile(file) {
     } else skipped++;
   }
 
+  // PROMs も records と同じく uuid マージ（新規追加 / updatedAt 新しい方で更新 / それ以外スキップ）
+  const existingProms = await dbGetAll('proms');
+  const promsMap = new Map(existingProms.map((r) => [r.uuid, r]));
+  const promsToPut = [];
+  let pAdded = 0, pUpdated = 0, pSkipped = 0;
+  if (Array.isArray(data.proms)) {
+    for (const r of data.proms) {
+      if (!r.uuid) continue;
+      const cur = promsMap.get(r.uuid);
+      if (!cur) { promsToPut.push(r); pAdded++; }
+      else if ((r.updatedAt || '') > (cur.updatedAt || '')) { promsToPut.push(r); pUpdated++; }
+      else pSkipped++;
+    }
+  }
+
   const incomingMasters = Array.isArray(data.masterOptions)
     ? data.masterOptions.filter((m) => m.category && m.value && masters[m.category])
         .map((m) => ({ category: m.category, value: m.value }))
@@ -1159,15 +1512,17 @@ async function importJSONFile(file) {
     }
   }
 
-  const msg = `${file.name}\n新規 ${added} 件 / 更新 ${updated} 件 / 変更なし ${skipped} 件\n` +
+  const msg = `${file.name}\n記録: 新規 ${added} / 更新 ${updated} / 変更なし ${skipped}\n` +
+    `PROMs: 新規 ${pAdded} / 更新 ${pUpdated} / 変更なし ${pSkipped}\n` +
     `選択肢マスタへの追加: ${newMasters.length} 件\n取り込みますか？`;
   if (!confirm(msg)) return;
 
   for (const r of toPut) await dbPut('records', r);
+  for (const r of promsToPut) await dbPut('proms', r);
   await setMeta('nextRecordNo', nextNo);
   await addMasterValues(newMasters);
   await refreshAfterDataChange();
-  toast(`取り込み完了（新規 ${added}・更新 ${updated}）`);
+  toast(`取り込み完了（記録 新規${added}・更新${updated} / PROMs 新規${pAdded}・更新${pUpdated}）`);
 }
 
 async function importSheetFile(file) {
@@ -1249,6 +1604,7 @@ function switchView(name) {
     if (selectMode) { selectMode = false; selectedUuids.clear(); const btn = document.getElementById('btn-select-mode'); if (btn) { btn.textContent = '選択'; btn.classList.remove('active'); } document.getElementById('select-bar').hidden = true; }
     renderList();
   }
+  if (name === 'proms') renderPromsList();
   if (name === 'data') refreshCount();
 }
 
@@ -1257,12 +1613,17 @@ function switchView(name) {
 async function init() {
   db = await openDB();
   await seedDefaultsIfEmpty();
+  await seedCategoryIfEmpty('timepoint'); // 既存ユーザーにも時点の既定選択肢を投入
   await loadMasters();
+  await loadVasScale();
   await backfillRecordNos();
 
   renderFormControls();
   clearForm();
+  renderPromsControls();
+  clearPromsForm();
   await renderSettings();
+  await renderPromsList();
   await refreshCount();
 
   document.getElementById('btn-save').addEventListener('click', saveRecord);
@@ -1291,6 +1652,23 @@ async function init() {
   document.getElementById('btn-export-selected-xlsx').addEventListener('click', exportSelectedXLSX);
   document.getElementById('btn-export-xlsx').addEventListener('click', exportXLSX);
   document.getElementById('btn-export-encrypted').addEventListener('click', exportEncrypted);
+  document.getElementById('btn-export-proms-xlsx').addEventListener('click', exportPromsXLSX);
+
+  // PROMsタブ
+  document.getElementById('btn-proms-save').addEventListener('click', savePROMs);
+  document.getElementById('btn-proms-new').addEventListener('click', () => {
+    if (confirm('編集を中止して新規入力に切り替えますか？（未保存の変更は破棄されます）')) clearPromsForm();
+  });
+  document.getElementById('proms-filter-id').addEventListener('input', renderPromsList);
+  document.getElementById('proms-filter-timepoint').addEventListener('change', renderPromsList);
+  document.getElementById('proms-sort').addEventListener('change', renderPromsList);
+
+  // 設定: VASスケール切替
+  const vasSel = document.getElementById('vas-scale');
+  if (vasSel) {
+    vasSel.value = String(vasScale);
+    vasSel.addEventListener('change', () => setVasScale(vasSel.value));
+  }
 
   const dropzone = document.getElementById('dropzone');
   const fileInput = document.getElementById('file-input');

@@ -196,9 +196,118 @@
     </div>
   </section>
 
+  <!-- ============ PROMsビュー ============ -->
+  <section id="view-proms" class="view">
+    <div class="card">
+      <div class="card-title">
+        <span id="proms-mode-label">新規PROMs</span>
+        <button id="btn-proms-new" class="btn-text" hidden>＋ 新規入力に切替</button>
+      </div>
+      <p class="data-hint">算出済みのスコアを登録します（設問入力・自動計算はしません）。患者IDで手術記録と紐付き、左右×時点ごとに1件登録できます。</p>
+
+      <h2 class="section-label">基本情報</h2>
+      <div class="field-grid">
+        <div class="field">
+          <label for="p-patientId">患者ID</label>
+          <input type="text" id="p-patientId" inputmode="numeric" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="p-date">評価日</label>
+          <input type="date" id="p-date">
+        </div>
+        <div class="field">
+          <label for="p-side">左右</label>
+          <select id="p-side"></select>
+        </div>
+        <div class="field">
+          <label for="p-timepoint">時点</label>
+          <select id="p-timepoint"></select>
+        </div>
+      </div>
+
+      <h2 class="section-label">JHEQ（0–28 / 合計0–84）</h2>
+      <div class="field-grid field-grid-pairs">
+        <div class="field">
+          <label for="p-jheqPain">痛み因子（0–28）</label>
+          <input type="number" id="p-jheqPain" inputmode="numeric" min="0" max="28" step="1">
+        </div>
+        <div class="field">
+          <label for="p-jheqMovement">動作因子（0–28）</label>
+          <input type="number" id="p-jheqMovement" inputmode="numeric" min="0" max="28" step="1">
+        </div>
+        <div class="field">
+          <label for="p-jheqMental">メンタル因子（0–28）</label>
+          <input type="number" id="p-jheqMental" inputmode="numeric" min="0" max="28" step="1">
+        </div>
+        <div class="field">
+          <label for="p-jheqTotal">合計（0–84）</label>
+          <input type="number" id="p-jheqTotal" inputmode="numeric" min="0" max="84" step="1">
+        </div>
+      </div>
+
+      <h2 class="section-label">HOOS-JR / FJS-12（0–100）</h2>
+      <div class="field-grid field-grid-pairs">
+        <div class="field">
+          <label for="p-hoosJr">HOOS-JR（0–100）</label>
+          <input type="number" id="p-hoosJr" inputmode="decimal" min="0" max="100" step="0.001">
+        </div>
+        <div class="field">
+          <label for="p-fjs12">FJS-12（0–100）</label>
+          <input type="number" id="p-fjs12" inputmode="decimal" min="0" max="100" step="0.01">
+        </div>
+      </div>
+
+      <h2 class="section-label">VAS</h2>
+      <div class="field-grid field-grid-pairs">
+        <div class="field">
+          <label for="p-vasPain">VAS 痛み</label>
+          <input type="number" id="p-vasPain" inputmode="decimal" min="0" max="100" step="0.1">
+        </div>
+        <div class="field">
+          <label for="p-vasSatisfaction">VAS 満足度</label>
+          <input type="number" id="p-vasSatisfaction" inputmode="decimal" min="0" max="100" step="0.1">
+        </div>
+      </div>
+
+      <h2 class="section-label">メモ</h2>
+      <div class="field field-wide">
+        <textarea id="p-notes" rows="3" placeholder="フリー記述"></textarea>
+      </div>
+    </div>
+
+    <div class="save-bar">
+      <button id="btn-proms-save" class="btn-primary">PROMsを保存</button>
+    </div>
+
+    <div class="list-toolbar">
+      <div class="sort-row">
+        <label for="proms-sort">並び替え</label>
+        <select id="proms-sort">
+          <option value="patient" selected>患者ID・時点順</option>
+          <option value="date-desc">評価日（新しい順）</option>
+          <option value="date-asc">評価日（古い順）</option>
+        </select>
+      </div>
+      <div class="filter-row">
+        <input type="search" id="proms-filter-id" placeholder="患者IDで絞り込み" inputmode="numeric">
+        <select id="proms-filter-timepoint"></select>
+      </div>
+    </div>
+    <ul id="proms-list" class="record-list"></ul>
+    <p id="proms-empty" class="empty-note" hidden>PROMsはまだありません</p>
+  </section>
+
   <!-- ============ 設定ビュー ============ -->
   <section id="view-settings" class="view">
     <p class="settings-note">各項目の選択肢を追加・並べ替え・削除できます。削除しても過去の記録の値は変わりません。</p>
+    <div class="settings-pref">
+      <label for="vas-scale">PROMs VASスケール（上限）</label>
+      <select id="vas-scale">
+        <option value="100">0–100（mm）</option>
+        <option value="10">0–10</option>
+      </select>
+      <p class="data-hint">PROMs入力欄のVAS上限と範囲チェックに反映されます。</p>
+    </div>
     <div id="settings-list"></div>
     <div class="settings-danger">
       <button id="btn-reset-all" class="btn-danger">全データを初期化（記録・マスタを削除）</button>
@@ -239,8 +348,10 @@
     <div class="card">
       <div class="card-title"><span>Excel書き出し</span></div>
       <div class="data-actions">
-        <button id="btn-export-xlsx" class="btn-secondary">全件をExcel (.xlsx) で書き出し</button>
+        <button id="btn-export-xlsx" class="btn-secondary">手術記録を全件Excel (.xlsx) で書き出し</button>
+        <button id="btn-export-proms-xlsx" class="btn-secondary">PROMsを縦断Excel (.xlsx) で書き出し</button>
       </div>
+      <p class="data-hint">PROMsは「行＝患者×左右×時点、列＝各スコア」の縦断シートで書き出します。</p>
     </div>
   </section>
 
@@ -249,6 +360,7 @@
 <nav class="tabbar">
   <button data-view="form" class="active">入力</button>
   <button data-view="list">一覧</button>
+  <button data-view="proms">PROMs</button>
   <button data-view="data">データ<span id="tab-badge" class="badge" hidden></span></button>
   <button data-view="settings">設定</button>
 </nav>

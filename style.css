@@ -420,6 +420,24 @@ input:focus, select:focus, textarea:focus {
   margin: 4px 2px 12px;
 }
 
+.settings-pref {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.settings-pref label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.settings-pref select {
+  width: 100%;
+}
+
 .settings-group {
   background: var(--card);
   border: 1px solid var(--border);
@@ -568,6 +586,8 @@ input:focus, select:focus, textarea:focus {
   font-size: 12px;
   margin-top: 6px;
 }
+
+.badge[hidden] { display: none; }
 
 .badge {
   display: inline-block;
