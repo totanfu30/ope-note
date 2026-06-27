@@ -711,9 +711,18 @@ input:focus, select:focus, textarea:focus {
   text-transform: none;
 }
 
-/* PROMsタブは固定保存バーが一覧の上に重なるため、下部に余白を足して
-   末尾の一覧項目・空状態のボタンが保存バーに隠れないようにする */
-#view-proms { padding-bottom: 72px; }
+/* PROMsタブはフォームの下に一覧・時系列が続くため、保存バーを画面下固定にすると
+   一覧の末尾に重なって隠してしまう。このタブだけ保存ボタンをフォーム直後へ
+   インライン配置し、下の内容を完全に見えるようにする。 */
+#view-proms .save-bar {
+  position: static;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  background: none;
+  padding: 0;
+  margin: 4px 0 8px;
+}
 
 .proms-empty {
   display: flex;
