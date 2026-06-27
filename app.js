@@ -794,7 +794,11 @@ async function renderPromsList() {
 
   listEl.innerHTML = '';
   emptyEl.hidden = rows.length > 0;
-  emptyEl.textContent = (fId || fTp) ? '該当するPROMsがありません' : 'PROMsはまだありません';
+  const isFiltered = !!(fId || fTp);
+  document.getElementById('proms-empty-text').textContent =
+    isFiltered ? '該当するPROMsがありません' : 'まだPROMsはありません';
+  // 取り込みボタンは「本当にデータが無い時」だけ出す（絞り込み0件では出さない）
+  document.getElementById('btn-proms-import-empty').hidden = isFiltered;
 
   for (const rec of rows) {
     const li = document.createElement('li');
@@ -1559,14 +1563,14 @@ async function handleImportFile(file) {
     else alert('対応形式は .json / .csv / .xlsx です');
   } catch (e) {
     console.error(e);
-    alert('取り込みに失敗しました: ' + e.message);
+    alert('取り込みに失敗しました。ファイルを確認して、もう一度選択してください。');
   }
 }
 
 async function importJSONFile(file) {
   let data;
   try { data = JSON.parse(await file.text()); }
-  catch { alert('JSONの解析に失敗しました'); return; }
+  catch { alert('JSONを読めませんでした。OCR後の ope_note_proms.json を選択してください。'); return; }
 
   // 暗号化バックアップなら復号してから取り込む
   if (data && data.app === 'ope-note' && data.enc) {
@@ -1577,7 +1581,7 @@ async function importJSONFile(file) {
   }
 
   if (data.app !== 'ope-note' || !Array.isArray(data.records)) {
-    alert('ope-noteの書き出しファイルではありません');
+    alert('ope-note形式のJSONではありません。書き出した .json（PROMsは ope_note_proms.json）を選択してください。');
     return;
   }
 
@@ -1662,7 +1666,12 @@ async function importJSONFile(file) {
   await setMeta('nextRecordNo', nextNo);
   await addMasterValues(newMasters);
   await refreshAfterDataChange();
-  toast(`取り込み完了（記録 新規${added}・更新${updated} / PROMs 新規${pAdded}・更新${pUpdated}・項目埋め${pFilled}）`);
+  // 実際に変化した側だけを出す（PROMsだけ取り込んだ時に「記録 新規0」を出さない）
+  const recPart = (added || updated) ? `記録 新規${added}・更新${updated}` : '';
+  const promsPart = (pAdded || pUpdated || pFilled)
+    ? `PROMs 新規${pAdded}・更新${pUpdated}・項目埋め${pFilled}` : '';
+  const parts = [recPart, promsPart].filter(Boolean);
+  toast(parts.length ? `取り込み完了：${parts.join(' / ')}` : '変更はありませんでした');
 }
 
 async function importSheetFile(file) {
@@ -1799,9 +1808,9 @@ async function init() {
   document.getElementById('btn-proms-new').addEventListener('click', () => {
     if (confirm('編集を中止して新規入力に切り替えますか？（未保存の変更は破棄されます）')) clearPromsForm();
   });
-  document.getElementById('btn-proms-import').addEventListener('click', () => {
-    document.getElementById('file-input').click();
-  });
+  const triggerImport = () => document.getElementById('file-input').click();
+  document.getElementById('btn-proms-import').addEventListener('click', triggerImport);
+  document.getElementById('btn-proms-import-empty').addEventListener('click', triggerImport);
   document.getElementById('proms-filter-id').addEventListener('input', renderPromsList);
   document.getElementById('proms-filter-timepoint').addEventListener('change', renderPromsList);
   document.getElementById('proms-sort').addEventListener('change', renderPromsList);

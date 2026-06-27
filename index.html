@@ -198,11 +198,17 @@
 
   <!-- ============ PROMsビュー ============ -->
   <section id="view-proms" class="view">
+    <div class="proms-bar">
+      <button id="btn-proms-import" class="btn-import" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>
+        PROMsを取り込み
+      </button>
+    </div>
+
     <div class="card">
       <div class="card-title">
         <span id="proms-mode-label">新規PROMs</span>
         <span class="card-title-actions">
-          <button id="btn-proms-import" class="btn-text">PROMsを取り込み</button>
           <button id="btn-proms-new" class="btn-text" hidden>＋ 新規入力に切替</button>
         </span>
       </div>
@@ -282,6 +288,7 @@
       <button id="btn-proms-save" class="btn-primary">PROMsを保存</button>
     </div>
 
+    <h2 class="section-label proms-list-label">登録済みPROMs</h2>
     <div class="list-toolbar">
       <div class="sort-row">
         <label for="proms-sort">並び替え</label>
@@ -298,7 +305,13 @@
     </div>
     <div id="proms-timeseries" class="proms-timeseries"></div>
     <ul id="proms-list" class="record-list"></ul>
-    <p id="proms-empty" class="empty-note" hidden>PROMsはまだありません</p>
+    <div id="proms-empty" class="empty-note proms-empty" hidden>
+      <p id="proms-empty-text">まだPROMsはありません</p>
+      <button id="btn-proms-import-empty" class="btn-import" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>
+        JSONを選択
+      </button>
+    </div>
   </section>
 
   <!-- ============ 設定ビュー ============ -->

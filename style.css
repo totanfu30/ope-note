@@ -77,6 +77,8 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
   font-weight: 700;
   font-size: 15px;
   color: var(--accent-dark);
@@ -670,6 +672,63 @@ input:focus, select:focus, textarea:focus {
   word-break: break-all;
   user-select: all;
 }
+
+/* ============ PROMs 取り込み入口・空状態 ============ */
+
+.proms-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.btn-import {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 18px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+  background: #fff;
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.btn-import:active { background: #eff4ff; }
+
+.btn-import svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+/* 「PROMs」のブランド表記を保つ（section-labelの大文字化を打ち消す） */
+.proms-list-label {
+  margin-top: 22px;
+  text-transform: none;
+}
+
+/* PROMsタブは固定保存バーが一覧の上に重なるため、下部に余白を足して
+   末尾の一覧項目・空状態のボタンが保存バーに隠れないようにする */
+#view-proms { padding-bottom: 72px; }
+
+.proms-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px 12px;
+}
+
+/* display:flex はUAの [hidden]{display:none} を上書きしてしまうため明示的に隠す */
+.proms-empty[hidden] { display: none; }
+
+.proms-empty p { margin: 0; }
+
+.proms-empty .btn-import[hidden] { display: none; }
 
 /* ============ PROMs 時系列表 ============ */
 
