@@ -404,7 +404,7 @@ async function saveRecord() {
     rec.uuid = editingUuid;
     rec.createdAt = editingMeta.createdAt;
     rec.createdDevice = editingMeta.createdDevice;
-    rec.syncedAt = editingMeta.syncedAt ?? null;
+    rec.syncedAt = null; // 編集したら未送信に戻す（修正をMacへ再伝播させるため）
     rec.recordNo = editingMeta.recordNo; // 登録番号は編集で変えない
   } else {
     rec.uuid = genUUID();
@@ -704,7 +704,7 @@ async function savePROMs() {
     rec.uuid = editingPromsUuid;
     rec.createdAt = editingPromsMeta.createdAt;
     rec.createdDevice = editingPromsMeta.createdDevice;
-    rec.syncedAt = editingPromsMeta.syncedAt ?? null;
+    rec.syncedAt = null; // 編集したら未送信に戻す（修正をMacへ再伝播させるため）
   } else {
     rec.uuid = genUUID();
     rec.createdAt = now;
