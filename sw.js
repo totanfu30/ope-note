@@ -9,6 +9,7 @@ const PRECACHE_URLS = [
   "./index.html",
   "./style.css",
   "./app.js",
+  "./sw-register.js",
   "./manifest.webmanifest",
   "./vendor/xlsx.full.min.js",
   "./icons/apple-touch-icon.png",
