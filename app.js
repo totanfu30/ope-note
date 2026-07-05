@@ -1533,7 +1533,7 @@ async function decryptPayload(obj, password) {
 
 async function exportEncrypted() {
   const data = await buildExportData(false); // 全件
-  if (!data.records.length) { toast('記録がありません'); return; }
+  if (!data.records.length && !data.proms.length) { toast('記録がありません'); return; }
   const pw = prompt('バックアップを暗号化するパスワードを入力してください。\n※このパスワードは復元時に必要です。忘れると復号できません。');
   if (pw === null) return;
   if (pw.length < 6) { alert('パスワードは6文字以上にしてください'); return; }
@@ -1545,12 +1545,12 @@ async function exportEncrypted() {
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: '手術記録（暗号化バックアップ）' });
-      toast(`${data.records.length} 件を暗号化して書き出しました`);
+      toast(`記録 ${data.records.length} 件・PROMs ${data.proms.length} 件を暗号化して書き出しました`);
       return;
     } catch (e) { if (e.name === 'AbortError') return; }
   }
   downloadFile(file);
-  toast(`${data.records.length} 件を暗号化して書き出しました`);
+  toast(`記録 ${data.records.length} 件・PROMs ${data.proms.length} 件を暗号化して書き出しました`);
 }
 
 /* ---------- インポート ---------- */
