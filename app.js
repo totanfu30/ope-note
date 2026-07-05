@@ -1760,6 +1760,9 @@ function switchView(name) {
 /* ============================ 初期化 ============================ */
 
 async function init() {
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist(); // IndexedDB消失リスク低減（結果は待たなくてよい）
+  }
   db = await openDB();
   await seedDefaultsIfEmpty();
   await seedCategoryIfEmpty('timepoint'); // 既存ユーザーにも時点の既定選択肢を投入
