@@ -1035,7 +1035,8 @@ async function deleteOption(catKey, opt) {
 
 async function resetAllData() {
   const records = await dbGetAll('records');
-  if (!confirm(`全 ${records.length} 件の記録とすべての選択肢マスタを削除して初期状態に戻します。よろしいですか？`)) return;
+  const proms = await dbGetAll('proms');
+  if (!confirm(`全 ${records.length} 件の記録と PROMs ${proms.length} 件、すべての選択肢マスタを削除して初期状態に戻します。よろしいですか？`)) return;
   if (!confirm('本当に削除しますか？この操作は取り消せません。')) return;
   await dbRequest('records', 'readwrite', (st) => st.clear());
   await dbRequest('proms', 'readwrite', (st) => st.clear());
