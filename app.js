@@ -567,7 +567,8 @@ const PROMS_SCORE_FIELDS = [
   { id: 'hoosJr',          field: 'hoosJr',          label: 'HOOS-JR',      min: 0, max: 100 },
   { id: 'fjs12',           field: 'fjs12',           label: 'FJS-12',       min: 0, max: 100 },
   { id: 'vasPain',         field: 'vasPain',         label: 'VAS 痛み',     min: 0, max: 100, vas: true },
-  { id: 'vasSatisfaction', field: 'vasSatisfaction', label: 'VAS 満足度',   min: 0, max: 100, vas: true },
+  // 旧名 vasSatisfaction。実体はJHEQ付属の股関節状態VASで「満足度」は誤命名だった（2026-07-07改名）
+  { id: 'vasHipState',     field: 'vasHipState',     label: '股関節状態VAS', min: 0, max: 100, vas: true },
 ];
 
 /* PROMsで使う選択式（records側のチップとは独立した素のselect） */
@@ -746,6 +747,25 @@ function promsKey(r) {
   return `${r.patientID || ''}|${r.timepoint || ''}`;
 }
 
+/* 旧フィールド名の互換変換（2026-07-07 vasSatisfaction→vasHipState 改名）。
+   過去に書き出したJSONやIndexedDB内の旧キーを新キーへ移す。変更があれば true。純関数。 */
+function migrateLegacyPromsFields(r) {
+  if (!r || r.vasSatisfaction === undefined) return false;
+  if (r.vasHipState === undefined || r.vasHipState === null || r.vasHipState === '') {
+    r.vasHipState = r.vasSatisfaction;
+  }
+  delete r.vasSatisfaction;
+  return true;
+}
+
+/* IndexedDB内の既存PROMsを新フィールド名へ移行する（対象が無ければ何もしない一度きりの処理） */
+async function migratePromsFieldNames() {
+  const all = await dbGetAll('proms');
+  for (const r of all) {
+    if (migrateLegacyPromsFields(r)) await dbPut('proms', r);
+  }
+}
+
 /* 項目単位マージ: target に incoming の「値がある」スコア欄と日付/メモのみ反映し、空欄は既存を温存する。
    target の uuid・createdAt 等は保持。純関数（Nodeテスト用にDOM/DB非依存）。 */
 function mergePromsField(target, incoming) {
@@ -815,7 +835,7 @@ async function renderPromsList() {
     if (rec.assessmentDate) parts.push(rec.assessmentDate);
     const scoreBits = PROMS_SCORE_FIELDS
       .filter((s) => rec[s.field] !== null && rec[s.field] !== undefined && rec[s.field] !== '')
-      .map((s) => `${s.label.replace('JHEQ ', 'J:').replace('VAS ', 'V:')}${rec[s.field]}`);
+      .map((s) => `${s.label.replace('股関節状態VAS', 'V:状態').replace('JHEQ ', 'J:').replace('VAS ', 'V:')}${rec[s.field]}`);
     line2.textContent = [parts.join(' '), scoreBits.join(' / ')].filter(Boolean).join('　') || '（スコア未入力）';
     main.appendChild(line1);
     main.appendChild(line2);
@@ -1450,7 +1470,7 @@ const PROMS_EXPORT_COLUMNS = [
   ['評価日', (r) => (r.assessmentDate || '').replace(/-/g, '')],
   ['JHEQ痛み', 'jheqPain'], ['JHEQ動作', 'jheqMovement'], ['JHEQメンタル', 'jheqMental'], ['JHEQ合計', 'jheqTotal'],
   ['HOOS-JR', 'hoosJr'], ['FJS-12', 'fjs12'],
-  ['VAS痛み', 'vasPain'], ['VAS満足度', 'vasSatisfaction'],
+  ['VAS痛み', 'vasPain'], ['股関節状態VAS', 'vasHipState'],
   ['メモ', 'notes'],
 ];
 
@@ -1624,6 +1644,7 @@ async function importJSONFile(file) {
   if (Array.isArray(data.proms)) {
     for (const r of data.proms) {
       if (!r.uuid) continue;
+      migrateLegacyPromsFields(r); // 旧キー(vasSatisfaction)のJSONも受け付ける
       const byUuid = promsByUuid.get(r.uuid);
       if (byUuid) {
         if ((r.updatedAt || '') > (byUuid.updatedAt || '')) { promsToPut.push(r); pUpdated++; }
@@ -1770,6 +1791,7 @@ async function init() {
   await loadMasters();
   await loadVasScale();
   await backfillRecordNos();
+  await migratePromsFieldNames();
 
   renderFormControls();
   clearForm();
