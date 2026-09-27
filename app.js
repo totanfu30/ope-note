@@ -1623,6 +1623,7 @@ async function importJSONFile(file) {
 
   const toPut = [];
   let added = 0, updated = 0, skipped = 0;
+  const caseNoByUuid = new Map(existingArr.map((r) => [r.uuid, r.caseNo]));
   for (const r of data.records) {
     if (!r.uuid) continue;
     const cur = existing.get(r.uuid);
@@ -1633,9 +1634,22 @@ async function importJSONFile(file) {
       toPut.push(r); added++;
     } else if ((r.updatedAt || '') > (cur.updatedAt || '')) {
       r.recordNo = cur.recordNo; // 既存の登録番号を維持
-      if (r.caseNo == null && cur.caseNo != null) r.caseNo = cur.caseNo; // Excel通し番号を落とさない
+      // Excel通し番号は番号返却ファイルが正本。通常の同期では既存の番号を変えない（無ければ受け取る）
+      if (cur.caseNo != null) r.caseNo = cur.caseNo;
       toPut.push(r); updated++;
     } else skipped++;
+  }
+
+  // 取り込み後に同じ Excel通し番号が2記録に付くなら、取り込み側の番号を外す（記録そのものは取り込む）
+  let caseNoDropped = 0;
+  for (const r of toPut) caseNoByUuid.set(r.uuid, r.caseNo);
+  const dupNos = duplicatedCaseNos(caseNoByUuid);
+  for (const r of toPut) {
+    const cur = existing.get(r.uuid);
+    if (r.caseNo != null && dupNos.has(r.caseNo) && !(cur && cur.caseNo === r.caseNo)) {
+      delete r.caseNo;
+      caseNoDropped++;
+    }
   }
 
   // PROMs のマージ（3分岐）:
@@ -1687,7 +1701,9 @@ async function importJSONFile(file) {
 
   const msg = `${file.name}\n記録: 新規 ${added} / 更新 ${updated} / 変更なし ${skipped}\n` +
     `PROMs: 新規 ${pAdded} / 更新 ${pUpdated} / 項目埋め ${pFilled} / 変更なし ${pSkipped}\n` +
-    `選択肢マスタへの追加: ${newMasters.length} 件\n取り込みますか？`;
+    `選択肢マスタへの追加: ${newMasters.length} 件\n` +
+    (caseNoDropped ? `※通し番号が重なる ${caseNoDropped} 件は番号を付けずに取り込みます（番号返却ファイルで付け直してください）\n` : '') +
+    '取り込みますか？';
   if (!confirm(msg)) return;
 
   for (const r of toPut) await dbPut('records', r);
@@ -1706,18 +1722,52 @@ async function importJSONFile(file) {
 /* Mac の追記スクリプト（tools/append_to_master.py）が出す「通し番号返却ファイル」を取り込み、
    各記録に元データExcelの通し番号（caseNo）を付ける。番号以外の項目・更新日時・送信済み状態は変えない。
    突き合わせは 手術日＋ID＋左右（スクリプトの重複判定と同じ正規化）。 */
+const SIDE_NORM = { rt: 'R', r: 'R', right: 'R', '右': 'R', '右側': 'R',
+                    lt: 'L', l: 'L', left: 'L', '左': 'L', '左側': 'L' };
+
+/* 突き合わせ用のID・左右の正規化。tools/append_to_master.py の norm_id / SIDE_NORM と同じ規則。
+   IDは数値に変換せず文字列のまま扱う（長い数字IDの精度落ちを防ぐ）。数字だけのIDは .0 と先頭の0を落とす。 */
+function normCaseId(pid) {
+  const id = String(pid ?? '').trim();
+  const m = id.match(/^(\d+)(?:\.0+)?$/);
+  return m ? (m[1].replace(/^0+/, '') || '0') : id;
+}
+
 function caseKey(date, pid, side) {
-  let id = String(pid ?? '').trim();
-  if (/^\d+(\.0)?$/.test(id)) id = String(parseInt(id, 10));
-  return `${String(date || '').trim()}|${id}|${String(side || '').trim()}`;
+  const s = String(side ?? '').trim();
+  return `${String(date || '').trim()}|${normCaseId(pid)}|${SIDE_NORM[s.toLowerCase()] ?? s}`;
+}
+
+/* 同じ caseNo が2つ以上の記録に付いていないか（uuid→caseNo の Map を受け取り、重複した番号を返す） */
+function duplicatedCaseNos(caseNoByUuid) {
+  const seen = new Set();
+  const dups = new Set();
+  for (const n of caseNoByUuid.values()) {
+    if (n == null) continue;
+    if (seen.has(n)) dups.add(n); else seen.add(n);
+  }
+  return dups;
 }
 
 async function importCaseNoMap(data, file) {
   const entries = Array.isArray(data.entries) ? data.entries : [];
   const noOf = new Map();
+  const keyOfNo = new Map();
+  const conflicts = [];
   for (const e of entries) {
     const n = Number(e.caseNo);
-    if (Number.isInteger(n) && n > 0) noOf.set(caseKey(e.surgeryDate, e.patientID, e.side), n);
+    if (!(Number.isInteger(n) && n > 0)) continue;
+    const k = caseKey(e.surgeryDate, e.patientID, e.side);
+    // ファイル内の矛盾: 同じ症例に別の番号／同じ番号が別の症例
+    if (noOf.has(k) && noOf.get(k) !== n) conflicts.push(`No.${noOf.get(k)}とNo.${n}`);
+    if (keyOfNo.has(n) && keyOfNo.get(n) !== k) conflicts.push(`No.${n}`);
+    noOf.set(k, n);
+    keyOfNo.set(n, k);
+  }
+  if (conflicts.length) {
+    alert(`番号返却ファイルの中に矛盾があるため中止しました（${conflicts.slice(0, 3).join('、')}）。\n` +
+      'Macで追記スクリプトを実行し直して、新しい返却ファイルを使ってください。');
+    return;
   }
   const records = await dbGetAll('records');
   const toPut = [];
@@ -1732,12 +1782,7 @@ async function importCaseNoMap(data, file) {
   // 同じ番号が2つの記録に付くなら取り込まない（重複入力の可能性）
   const final = new Map(records.map((r) => [r.uuid, r.caseNo]));
   for (const r of toPut) final.set(r.uuid, r.caseNo);
-  const seen = new Map();
-  const dups = new Set();
-  for (const n of final.values()) {
-    if (n == null) continue;
-    if (seen.has(n)) dups.add(n); else seen.set(n, true);
-  }
+  const dups = duplicatedCaseNos(final);
   if (dups.size) {
     alert(`同じ通し番号が複数の記録に付くため中止しました（No.${[...dups].slice(0, 5).join('・')}）。\n` +
       '手術日・ID・左右が同じ記録が重複していないか確認してください。');
