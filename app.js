@@ -406,6 +406,7 @@ async function saveRecord() {
     rec.createdDevice = editingMeta.createdDevice;
     rec.syncedAt = null; // 編集したら未送信に戻す（修正をMacへ再伝播させるため）
     rec.recordNo = editingMeta.recordNo; // 登録番号は編集で変えない
+    if (editingMeta.caseNo != null) rec.caseNo = editingMeta.caseNo; // Excel通し番号も編集で変えない
   } else {
     rec.uuid = genUUID();
     rec.createdAt = now;
@@ -424,10 +425,10 @@ async function saveRecord() {
 
 async function editRecord(rec) {
   editingUuid = rec.uuid;
-  editingMeta = { createdAt: rec.createdAt, createdDevice: rec.createdDevice, syncedAt: rec.syncedAt, recordNo: rec.recordNo };
+  editingMeta = { createdAt: rec.createdAt, createdDevice: rec.createdDevice, syncedAt: rec.syncedAt, recordNo: rec.recordNo, caseNo: rec.caseNo };
   fillForm(rec);
   document.getElementById('form-mode-label').textContent =
-    `編集中: 登録No.${rec.recordNo ?? '－'} / ${rec.surgeryDate} / ID ${rec.patientID || '－'}`;
+    `編集中: No.${rec.caseNo ?? '未確定'} / ${rec.surgeryDate} / ID ${rec.patientID || '－'}`;
   document.getElementById('btn-new').hidden = false;
   document.getElementById('btn-duplicate').hidden = false;
   switchView('form');
@@ -498,7 +499,7 @@ async function renderList() {
     main.className = 'record-main';
     const nos = document.createElement('div');
     nos.className = 'record-nos';
-    nos.textContent = `登録No.${rec.recordNo ?? '－'}　/　カウント ${countMap.get(rec.uuid)} / ${total}`;
+    nos.textContent = `No.${rec.caseNo ?? '未確定'}　/　登録No.${rec.recordNo ?? '－'}　/　カウント ${countMap.get(rec.uuid)} / ${total}`;
     main.appendChild(nos);
     const line1 = document.createElement('div');
     line1.className = 'record-line1';
@@ -1601,6 +1602,11 @@ async function importJSONFile(file) {
     catch { alert('復号に失敗しました。パスワードが違うか、ファイルが壊れています。'); return; }
   }
 
+  if (data && data.app === 'ope-note' && data.kind === 'caseNoMap') {
+    await importCaseNoMap(data, file);
+    return;
+  }
+
   if (data.app !== 'ope-note' || !Array.isArray(data.records)) {
     alert('ope-note形式のJSONではありません。書き出した .json（PROMsは ope_note_proms.json）を選択してください。');
     return;
@@ -1627,6 +1633,7 @@ async function importJSONFile(file) {
       toPut.push(r); added++;
     } else if ((r.updatedAt || '') > (cur.updatedAt || '')) {
       r.recordNo = cur.recordNo; // 既存の登録番号を維持
+      if (r.caseNo == null && cur.caseNo != null) r.caseNo = cur.caseNo; // Excel通し番号を落とさない
       toPut.push(r); updated++;
     } else skipped++;
   }
@@ -1694,6 +1701,55 @@ async function importJSONFile(file) {
     ? `PROMs 新規${pAdded}・更新${pUpdated}・項目埋め${pFilled}` : '';
   const parts = [recPart, promsPart].filter(Boolean);
   toast(parts.length ? `取り込み完了：${parts.join(' / ')}` : '変更はありませんでした');
+}
+
+/* Mac の追記スクリプト（tools/append_to_master.py）が出す「通し番号返却ファイル」を取り込み、
+   各記録に元データExcelの通し番号（caseNo）を付ける。番号以外の項目・更新日時・送信済み状態は変えない。
+   突き合わせは 手術日＋ID＋左右（スクリプトの重複判定と同じ正規化）。 */
+function caseKey(date, pid, side) {
+  let id = String(pid ?? '').trim();
+  if (/^\d+(\.0)?$/.test(id)) id = String(parseInt(id, 10));
+  return `${String(date || '').trim()}|${id}|${String(side || '').trim()}`;
+}
+
+async function importCaseNoMap(data, file) {
+  const entries = Array.isArray(data.entries) ? data.entries : [];
+  const noOf = new Map();
+  for (const e of entries) {
+    const n = Number(e.caseNo);
+    if (Number.isInteger(n) && n > 0) noOf.set(caseKey(e.surgeryDate, e.patientID, e.side), n);
+  }
+  const records = await dbGetAll('records');
+  const toPut = [];
+  let same = 0, changed = 0;
+  for (const r of records) {
+    const n = noOf.get(caseKey(r.surgeryDate, r.patientID, r.side));
+    if (n == null) continue;
+    if (r.caseNo === n) { same++; continue; }
+    if (r.caseNo != null) changed++;
+    toPut.push({ ...r, caseNo: n });
+  }
+  // 同じ番号が2つの記録に付くなら取り込まない（重複入力の可能性）
+  const final = new Map(records.map((r) => [r.uuid, r.caseNo]));
+  for (const r of toPut) final.set(r.uuid, r.caseNo);
+  const seen = new Map();
+  const dups = new Set();
+  for (const n of final.values()) {
+    if (n == null) continue;
+    if (seen.has(n)) dups.add(n); else seen.set(n, true);
+  }
+  if (dups.size) {
+    alert(`同じ通し番号が複数の記録に付くため中止しました（No.${[...dups].slice(0, 5).join('・')}）。\n` +
+      '手術日・ID・左右が同じ記録が重複していないか確認してください。');
+    return;
+  }
+  const unmatched = noOf.size - toPut.length - same;
+  const msg = `${file.name}\n通し番号: 新しく付ける ${toPut.length - changed} / 付け替え ${changed} / 変更なし ${same}` +
+    (unmatched > 0 ? `\nこの端末に該当する記録がない番号: ${unmatched}` : '') + '\n取り込みますか？';
+  if (!confirm(msg)) return;
+  for (const r of toPut) await dbPut('records', r);
+  await refreshAfterDataChange();
+  toast(toPut.length ? `通し番号を${toPut.length}件に付けました` : '変更はありませんでした');
 }
 
 async function importSheetFile(file) {
