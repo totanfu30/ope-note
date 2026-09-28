@@ -470,10 +470,16 @@ async function renderList() {
     .map((r, i) => [r.uuid, i + 1]));
   const total = records.length;
 
-  // 表示順（登録No. / 手術日 の昇順・降順）
+  // 表示順（No. / 登録No. / 手術日 の昇順・降順）
   const [key, dir] = sortKey.split('-');
   const sign = dir === 'asc' ? 1 : -1;
   records.sort((a, b) => {
+    if (key === 'caseNo') {
+      // 未確定（Excel未登録）は昇順・降順とも末尾に。未確定どうしは手術日順
+      if ((a.caseNo == null) !== (b.caseNo == null)) return a.caseNo == null ? 1 : -1;
+      if (a.caseNo == null) return (a.surgeryDate || '').localeCompare(b.surgeryDate || '');
+      return sign * (a.caseNo - b.caseNo);
+    }
     if (key === 'recordNo') return sign * ((a.recordNo || 0) - (b.recordNo || 0));
     return sign * ((a.surgeryDate || '').localeCompare(b.surgeryDate || '') ||
                    (a.createdAt || '').localeCompare(b.createdAt || ''));
@@ -1771,10 +1777,18 @@ async function importCaseNoMap(data, file) {
   }
   const records = await dbGetAll('records');
   const toPut = [];
-  let same = 0, changed = 0;
+  let same = 0, changed = 0, cleared = 0;
   for (const r of records) {
     const n = noOf.get(caseKey(r.surgeryDate, r.patientID, r.side));
-    if (n == null) continue;
+    if (n == null) {
+      // ファイルに無い記録が、ファイルで別の症例に付いた番号を持っている → Excel側の並べ直しで古くなった番号なので外す
+      if (r.caseNo != null && keyOfNo.has(r.caseNo)) {
+        const { caseNo, ...rest } = r;
+        toPut.push(rest);
+        cleared++;
+      }
+      continue;
+    }
     if (r.caseNo === n) { same++; continue; }
     if (r.caseNo != null) changed++;
     toPut.push({ ...r, caseNo: n });
@@ -1788,13 +1802,15 @@ async function importCaseNoMap(data, file) {
       '手術日・ID・左右が同じ記録が重複していないか確認してください。');
     return;
   }
-  const unmatched = noOf.size - toPut.length - same;
-  const msg = `${file.name}\n通し番号: 新しく付ける ${toPut.length - changed} / 付け替え ${changed} / 変更なし ${same}` +
+  const assigned = toPut.length - cleared;
+  const unmatched = noOf.size - assigned - same;
+  const msg = `${file.name}\n通し番号: 新しく付ける ${assigned - changed} / 付け替え ${changed} / 変更なし ${same}` +
+    (cleared ? `\n古い番号を外して「未確定」に戻す: ${cleared}` : '') +
     (unmatched > 0 ? `\nこの端末に該当する記録がない番号: ${unmatched}` : '') + '\n取り込みますか？';
   if (!confirm(msg)) return;
   for (const r of toPut) await dbPut('records', r);
   await refreshAfterDataChange();
-  toast(toPut.length ? `通し番号を${toPut.length}件に付けました` : '変更はありませんでした');
+  toast(toPut.length ? `通し番号を${assigned}件に付けました` + (cleared ? `（${cleared}件は未確定に）` : '') : '変更はありませんでした');
 }
 
 async function importSheetFile(file) {
